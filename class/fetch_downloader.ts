@@ -1,6 +1,7 @@
 import { fetch, AbortController } from "scripting"
 import { database } from "./database"
 import { fileManager } from "./file_manager"
+import { writeBytesCompat } from "./write_compat"
 import { MusicProvider, music } from "./music"
 import { ID3Writer } from "../module/browser-id3-writer"
 import { detectAudioFormat } from "./audio_format"
@@ -223,7 +224,15 @@ class FetchDownloader {
       const chunks: Uint8Array[] = []
       let downloadedBytes = 0
 
-      const reader = response.body!.getReader()
+      // 兼容新旧 Scripting fetch：
+      // - 新版 response.body 是标准 ReadableStream<Uint8Array>，chunk 即 Uint8Array（无 toUint8Array）；
+      //   老的 Data 流挪到了 response.dataStream（chunk 是 Data，带 toUint8Array）。
+      // - 老版 response.body 是 ReadableStream<Data>（chunk 带 toUint8Array），没有 dataStream。
+      // 优先取 dataStream（新旧都给 Data chunk），不存在再回退 body；chunk 统一归一化为 Uint8Array。
+      const resp = response as any
+      const stream = resp.dataStream ?? resp.body
+      if (!stream) throw new Error("response 没有可读流（body/dataStream 均为空）")
+      const reader = stream.getReader()
       while (true) {
         if (task.isPaused) {
           console.log(`[下载暂停] ${musicInfo.title}`)
@@ -235,7 +244,10 @@ class FetchDownloader {
         if (done) break
         if (!value) continue
 
-        const bytes = value.toUint8Array()
+        // Data chunk -> toUint8Array()；新版标准流 chunk 本身就是 Uint8Array
+        const bytes: Uint8Array = typeof (value as any).toUint8Array === "function"
+          ? (value as any).toUint8Array()
+          : (value as Uint8Array)
         if (!bytes) continue
 
         chunks.push(bytes)
@@ -328,7 +340,7 @@ class FetchDownloader {
       console.log(`[处理文件] ${musicInfo.title} - 原始: ${audioData.byteLength} 字节，最终: ${finalData.byteLength} 字节`)
 
       const finalPath = fileManager.getAudioPath(musicInfo.id, format === "mp3" ? "mp3" : format === "unknown" ? "mp3" : format)
-      await FileManager.writeAsBytes(finalPath, finalData)
+      await writeBytesCompat(finalPath, finalData)
       console.log(`[处理文件] ${musicInfo.title} - 已保存到: ${finalPath}`)
 
       await database.addMusic({

@@ -1,5 +1,6 @@
 import { Path } from "scripting"
 import { setting } from "./setting"
+import { writeBytesCompat } from "./write_compat"
 
 class MusicFileManager {
   /** 封面存在性内存缓存，避免每次进页面都 I/O */
@@ -27,7 +28,7 @@ class MusicFileManager {
       throw new Error("Invalid music ID")
     }
     const path = this.getAudioPath(musicId)
-    await FileManager.writeAsBytes(path, data)
+    await writeBytesCompat(path, data)
     return path
   }
 
@@ -36,7 +37,7 @@ class MusicFileManager {
       throw new Error("Invalid music ID")
     }
     const path = this.getCoverPath(musicId)
-    await FileManager.writeAsBytes(path, data)
+    await writeBytesCompat(path, data)
     this.coverExistsCache.set(musicId, true)
     return path
   }
