@@ -27,6 +27,11 @@ import { PlaylistPickerContent } from "../components/playlist_picker"
 
 const SELECTED_GENRE_KEY = "discover_selected_genre"
 
+// 曲目归一化指纹（用于推荐去重 / 排除已下载）
+function trackKey(title?: string, artist?: string): string {
+  return `${(title || "").trim().toLowerCase()}|${(artist || "").trim().toLowerCase()}`
+}
+
 function trackToPreviewMusic(t: ChartTrack): Music {
   return {
     id: t.id,
@@ -68,28 +73,45 @@ export function DiscoverView() {
     loadGenre(genre)
   }, [genre.id])
 
-  // 首屏加载一次推荐：优先基于「已下载艺术家」，不足再补默认种子（失败静默）
+  // 首屏加载一次推荐：基于「下载×3 + 收藏×2 + 最近播放×1」加权选种子艺术家，
+  // 并从推荐结果中排除已下载的具体曲目；不足再补默认种子（失败静默）。
   useEffect(() => {
     let alive = true
     ;(async () => {
       try {
-        // 1) 从已下载歌曲提取高频艺术家
+        // 1) 加权统计艺术家偏好 + 收集已下载曲目指纹
         let seeds: { name: string; artistId?: number }[] = []
+        const ownedKeys = new Set<string>()
         try {
-          const downloaded = await database.getDownloadedMusic()
+          const [downloaded, favorites, recent] = await Promise.all([
+            database.getDownloadedMusic().catch(() => [] as Music[]),
+            database.getFavoriteMusic().catch(() => [] as Music[]),
+            database.getRecentlyPlayed(30).catch(() => [] as Music[]),
+          ])
+          const weights: { list: Music[]; w: number }[] = [
+            { list: downloaded, w: 3 },
+            { list: favorites, w: 2 },
+            { list: recent, w: 1 },
+          ]
           const counter = new Map<string, number>()
-          for (const m of downloaded) {
-            const name = (m.artist || "").trim()
-            if (!name || name === "未知艺术家") continue
-            counter.set(name, (counter.get(name) ?? 0) + 1)
+          for (const { list, w } of weights) {
+            for (const m of list) {
+              const name = (m.artist || "").trim()
+              if (name && name !== "未知艺术家") {
+                counter.set(name, (counter.get(name) ?? 0) + w)
+              }
+            }
           }
+          // 已下载曲目指纹（用于推荐去重）
+          for (const m of downloaded) ownedKeys.add(trackKey(m.title, m.artist))
+
           seeds = [...counter.entries()]
             .sort((a, b) => b[1] - a[1])
             .slice(0, 4)
             .map(([name]) => ({ name }))
           if (alive && seeds.length > 0) setRecoFromDownloads(true)
         } catch (e) {
-          console.error("[发现] 读已下载艺术家失败:", e)
+          console.error("[发现] 读偏好数据失败:", e)
         }
         // 2) 不足时用默认种子补齐（去重）
         if (seeds.length < 3) {
@@ -101,14 +123,22 @@ export function DiscoverView() {
           }
         }
         const lists = await Promise.all(
-          seeds.map(a => charts.fetchArtistTop(a, 6, "us").catch(() => []))
+          seeds.map(a => charts.fetchArtistTop(a, 8, "us").catch(() => []))
         )
         if (!alive) return
-        // 交错混合各艺人的曲目，避免扎堆
+        // 交错混合各艺人的曲目，避免扎堆；并排除已下载曲目
         const merged: ChartTrack[] = []
+        const seen = new Set<string>()
         const maxLen = Math.max(0, ...lists.map(l => l.length))
         for (let i = 0; i < maxLen; i++) {
-          for (const l of lists) if (l[i]) merged.push(l[i])
+          for (const l of lists) {
+            const t = l[i]
+            if (!t) continue
+            const k = trackKey(t.title, t.artist)
+            if (ownedKeys.has(k) || seen.has(k)) continue
+            seen.add(k)
+            merged.push(t)
+          }
         }
         setRecommend(merged)
       } catch {
