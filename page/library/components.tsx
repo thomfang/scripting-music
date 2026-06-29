@@ -69,6 +69,7 @@ function QuickEntryCard({ entry }: { entry: QuickEntry }) {
         padding={{ horizontal: 12, vertical: 13 }}
         background="secondarySystemBackground"
         clipShape={{ type: "rect", cornerRadius: 14 }}
+        contentShape={{ type: "rect", cornerRadius: 14 } as any}
       >
         {/* 彩色图标块 */}
         <ZStack

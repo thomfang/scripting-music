@@ -1,7 +1,7 @@
 import {
-  Button, ContentUnavailableView, Group, HStack, Image, Label, List, Menu,
-  NavigationLink, ProgressView, ScrollView, Section, Spacer, Text, Toolbar,
-  ToolbarItem, VStack, useEffect, useState,
+  Button, ContentUnavailableView, HStack, Image, Label, List, Menu,
+  NavigationLink, ProgressView, ScrollView, Section, Spacer, Toolbar,
+  ToolbarItem, useEffect, useState,
 } from "scripting"
 import { database, Music } from "../../class/database"
 import { player } from "../../class/player"
@@ -22,14 +22,6 @@ import {
 const RECENT_LIMIT = 12
 const FAVORITE_LIMIT = 5
 
-type LibraryProps = {
-  navigationTitle?: string
-  toolbar?: {
-    topBarLeading?: JSX.Element[]
-    topBarTrailing?: JSX.Element[]
-  }
-}
-
 type LibraryData = {
   all: Music[]
   favorites: Music[]
@@ -46,7 +38,10 @@ type LibraryData = {
   coverExists: Record<string, boolean>
 }
 
-export function LibraryView({ navigationTitle, toolbar }: LibraryProps = {}) {
+export function LibraryView() {
+  // 注：page/index.tsx 传入的 navigationTitle / toolbar(退出按钮)由框架自动
+  // 应用到本组件根视图，无需也不能手动再渲染一遍（否则退出按钮会重复）。
+  // 本组件只负责补一个「播放全部/随机」Menu，SwiftUI 会与框架的 toolbar 合并。
   const [data, setData] = useState<LibraryData | null>(null)
   const [loading, setLoading] = useState(true)
   const playerState = usePlayerState()
@@ -68,11 +63,17 @@ export function LibraryView({ navigationTitle, toolbar }: LibraryProps = {}) {
       // 最近添加 = getAllMusic 已按 added_at DESC，取前 N
       const recentlyAdded = all.slice(0, RECENT_LIMIT)
 
-      // 最爱歌曲：优先收藏，不足用 play_count Top 补
-      const favByPlayCount = favorites.length < FAVORITE_LIMIT
-      const favoriteRows = favByPlayCount
-        ? [...all].filter(m => m.play_count > 0).sort((a, b) => b.play_count - a.play_count).slice(0, FAVORITE_LIMIT)
-        : favorites.slice(0, FAVORITE_LIMIT)
+      // 最爱歌曲：有收藏 → 收藏优先，不足 FAVORITE_LIMIT 用 play_count Top 补足（合并，不替换）；
+      // 完全没有收藏 → 退化为「常听歌曲」（play_count Top）。
+      const favSet = new Set(favorites.map(m => m.id))
+      const hasFavorites = favorites.length > 0
+      const topPlayed = [...all]
+        .filter(m => m.play_count > 0)
+        .sort((a, b) => b.play_count - a.play_count)
+      const favByPlayCount = !hasFavorites
+      const favoriteRows = hasFavorites
+        ? [...favorites, ...topPlayed.filter(m => !favSet.has(m.id))].slice(0, FAVORITE_LIMIT)
+        : topPlayed.slice(0, FAVORITE_LIMIT)
 
       const downloadedCount = all.filter(m => m.is_downloaded).length
       const recentlyPlayedCount = all.filter(m => m.last_played_at).length
@@ -129,12 +130,6 @@ export function LibraryView({ navigationTitle, toolbar }: LibraryProps = {}) {
 
   const toolbarEl = (
     <Toolbar>
-      {(toolbar?.topBarLeading ?? []).map((el, i) => (
-        <ToolbarItem key={`lead-${i}`} placement="topBarLeading">{el}</ToolbarItem>
-      ))}
-      {(toolbar?.topBarTrailing ?? []).map((el, i) => (
-        <ToolbarItem key={`trail-${i}`} placement="topBarTrailing">{el}</ToolbarItem>
-      ))}
       <ToolbarItem placement="topBarTrailing">
         <Menu label={<Image systemName="play.circle" />}>
           <Button title="播放全部" systemImage="play.fill" action={() => playAll(false)} />
@@ -146,7 +141,7 @@ export function LibraryView({ navigationTitle, toolbar }: LibraryProps = {}) {
 
   if (loading) {
     return (
-      <List navigationTitle={navigationTitle} toolbar={toolbarEl}>
+      <List toolbar={toolbarEl}>
         <HStack listRowSeparator="hidden" padding={{ vertical: 40 }}>
           <Spacer /><ProgressView /><Spacer />
         </HStack>
@@ -157,7 +152,7 @@ export function LibraryView({ navigationTitle, toolbar }: LibraryProps = {}) {
   const hasContent = (data?.all.length ?? 0) > 0
 
   return (
-    <List navigationTitle={navigationTitle} toolbar={toolbarEl}>
+    <List toolbar={toolbarEl}>
       {/* A — 快捷入口宫格 */}
       <Section listRowInsets={{ horizontal: 16, vertical: 6 } as any} listRowSeparator="hidden">
         <QuickEntryGrid entries={quickEntries} />
@@ -219,13 +214,13 @@ export function LibraryView({ navigationTitle, toolbar }: LibraryProps = {}) {
       {/* D — 资料库分类 */}
       <Section header={<LibrarySectionHeader icon="square.grid.2x2.fill" iconColor="secondaryLabel" title="资料库" />}>
         <NavigationLink destination={<ArtistsView />}>
-          <Label title={`艺人${data ? ` · ${data.artistCount}` : ""}`} systemImage="music.mic" symbolRenderingMode="hierarchical" />
+          <Label title="艺人" systemImage="music.mic" symbolRenderingMode="hierarchical" badge={data?.artistCount ?? 0} />
         </NavigationLink>
         <NavigationLink destination={<AlbumsView />}>
-          <Label title={`专辑${data ? ` · ${data.albumCount}` : ""}`} systemImage="square.stack.fill" symbolRenderingMode="hierarchical" />
+          <Label title="专辑" systemImage="square.stack.fill" symbolRenderingMode="hierarchical" badge={data?.albumCount ?? 0} />
         </NavigationLink>
         <NavigationLink destination={<PlaylistsView />}>
-          <Label title={`播放列表${data ? ` · ${data.playlistCount}` : ""}`} systemImage="square.stack.3d.up.fill" symbolRenderingMode="hierarchical" />
+          <Label title="播放列表" systemImage="square.stack.3d.up.fill" symbolRenderingMode="hierarchical" badge={data?.playlistCount ?? 0} />
         </NavigationLink>
       </Section>
 
