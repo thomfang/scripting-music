@@ -1,5 +1,5 @@
-import { Capsule, Spacer, VStack, modifiers } from "scripting"
-import { Cover } from "./cover"
+import { Capsule, Spacer, VStack, ZStack, modifiers } from "scripting"
+import { Cover, CoverBackground } from "./cover"
 import { Title } from "./title"
 import { ProgressSlider } from "./slider"
 import { Control } from "./control"
@@ -12,30 +12,38 @@ export function PlayerView() {
 
 function PlayerPage() {
   return (
-    <VStack
-      modifiers={modifiers().padding({ leading: true, trailing: true })}
-    >
-      <Capsule
-        fill={"tertiaryLabel"}
-        frame={{ width: 40, height: 5 }}
-        padding={{ top: 9, bottom: 16 }}
+    <ZStack>
+      {/* 模糊封面动态背景，铺满整个播放页 */}
+      <CoverBackground
+        frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+        ignoresSafeArea={true}
       />
 
-      <Cover
-        frame={{ maxWidth: "infinity", maxHeight: 320 }}
-        clipShape={{ type: "rect", cornerRadius: 16 }}
-        shadow={{ color: "gray", radius: 4, y: 1 }}
-        padding={{ bottom: 24 }}
-      />
+      <VStack
+        modifiers={modifiers().padding({ leading: true, trailing: true })}
+      >
+        <Capsule
+          fill={"rgba(255,255,255,0.4)"}
+          frame={{ width: 40, height: 5 }}
+          padding={{ top: 9, bottom: 20 }}
+        />
 
-      <Title />
+        <Cover
+          frame={{ maxWidth: "infinity", maxHeight: 300 }}
+          clipShape={{ type: "rect", cornerRadius: 18 }}
+          shadow={{ color: "rgba(0,0,0,0.5)", radius: 24, y: 10 }}
+          padding={{ bottom: 28 }}
+        />
 
-      <Spacer /><Lyric padding={{ top: 8, bottom: 8 }} /><Spacer />
+        <Title />
 
-      <VStack padding={{ bottom: true }}>
-        <ProgressSlider />
-        <Control padding={{ top: true, bottom: true }} />
+        <Spacer /><Lyric padding={{ top: 8, bottom: 8 }} /><Spacer />
+
+        <VStack padding={{ bottom: true }} spacing={6}>
+          <ProgressSlider />
+          <Control padding={{ top: true, bottom: true }} />
+        </VStack>
       </VStack>
-    </VStack>
+    </ZStack>
   )
 }

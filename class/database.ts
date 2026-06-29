@@ -377,6 +377,7 @@ class Database {
         if (music?.is_downloaded) {
           await fileManager.deleteAudio(id)
           await fileManager.deleteCover(id)
+          await fileManager.deleteLyrics(id)
         }
         
         await this.db.execute("DELETE FROM music WHERE id = ?", [id])

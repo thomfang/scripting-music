@@ -36,7 +36,7 @@ export function ProgressSlider() {
             player.seek(value.value)
           }
         }}
-        tint="systemPink"
+        tint="white"
       />
       <SliderDesc currentTime={isDragging ? value.value : currentTime} duration={duration} />
     </VStack>
@@ -52,7 +52,7 @@ function SliderDesc({ currentTime, duration }: { currentTime: number, duration: 
   }
 
   return (
-    <HStack foregroundStyle={"secondaryLabel"} font={"footnote"}>
+    <HStack foregroundStyle={"rgba(255,255,255,0.6)"} font={"caption"} fontWeight={"medium"}>
       <Text>{formatTime(currentTime)}</Text>
       <Spacer />
       <Text>{formatTime(duration)}</Text>

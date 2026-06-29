@@ -18,9 +18,14 @@ class MusicFileManager {
     return Path.join(this.rootPath, "covers")
   }
 
+  private get lyricsDir(): string {
+    return Path.join(this.rootPath, "lyrics")
+  }
+
   async init(): Promise<void> {
     await FileManager.createDirectory(this.audioDir, true)
     await FileManager.createDirectory(this.coverDir, true)
+    await FileManager.createDirectory(this.lyricsDir, true)
   }
 
   async saveAudio(musicId: string, data: Uint8Array): Promise<string> {
@@ -83,6 +88,46 @@ class MusicFileManager {
     this.coverExistsCache.set(musicId, false)
   }
 
+  // ===== 歌词（与封面同生命周期：下载时存、删歌时删）=====
+
+  getLyricsPath(musicId: string): string {
+    return Path.join(this.lyricsDir, `${musicId}.json`)
+  }
+
+  /** 保存歌词为 JSON 文本。data 形如 { synced: LyricLine[]|null, plain: string|null }。 */
+  async saveLyrics(musicId: string, data: unknown): Promise<string> {
+    if (!musicId || musicId.includes("/") || musicId.includes("..")) {
+      throw new Error("Invalid music ID")
+    }
+    const path = this.getLyricsPath(musicId)
+    await FileManager.writeAsString(path, JSON.stringify(data))
+    return path
+  }
+
+  /** 读取本地歌词 JSON，不存在或解析失败返回 null。 */
+  async readLyrics<T = any>(musicId: string): Promise<T | null> {
+    const path = this.getLyricsPath(musicId)
+    if (!(await FileManager.exists(path))) return null
+    try {
+      const text = await FileManager.readAsString(path)
+      return JSON.parse(text) as T
+    } catch (e) {
+      console.error("[歌词] 本地读取失败:", e)
+      return null
+    }
+  }
+
+  async lyricsExists(musicId: string): Promise<boolean> {
+    return await FileManager.exists(this.getLyricsPath(musicId))
+  }
+
+  async deleteLyrics(musicId: string): Promise<void> {
+    const path = this.getLyricsPath(musicId)
+    if (await FileManager.exists(path)) {
+      await FileManager.remove(path)
+    }
+  }
+
   /** 统计目录内文件总大小（并行 stat） */
   private async sumDirSize(dir: string): Promise<number> {
     if (!(await FileManager.exists(dir))) return 0
@@ -94,11 +139,12 @@ class MusicFileManager {
   }
 
   async getStorageSize(): Promise<number> {
-    const [audioSize, coverSize] = await Promise.all([
+    const [audioSize, coverSize, lyricsSize] = await Promise.all([
       this.sumDirSize(this.audioDir),
-      this.sumDirSize(this.coverDir)
+      this.sumDirSize(this.coverDir),
+      this.sumDirSize(this.lyricsDir)
     ])
-    return audioSize + coverSize
+    return audioSize + coverSize + lyricsSize
   }
 }
 

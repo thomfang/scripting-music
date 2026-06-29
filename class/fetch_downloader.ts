@@ -3,6 +3,7 @@ import { database } from "./database"
 import { fileManager } from "./file_manager"
 import { writeBytesCompat } from "./write_compat"
 import { MusicProvider, music } from "./music"
+import { lyrics } from "./sources/lyrics"
 import { ID3Writer } from "../module/browser-id3-writer"
 import { detectAudioFormat } from "./audio_format"
 import { MATCH_THRESHOLD, pickBestMatch, rankCandidates } from "../page/setting/resource_repair_match"
@@ -358,6 +359,22 @@ class FetchDownloader {
         added_at: Date.now()
       })
 
+      // 顺带拉取并本地化歌词（与封面同生命周期；失败静默，不阻断下载）
+      try {
+        const lyricsResult = await lyrics.fetchLyrics({
+          title: musicInfo.title,
+          artist: musicInfo.artist,
+          album: musicInfo.album,
+          duration: musicInfo.duration,
+        })
+        if (lyricsResult.synced || lyricsResult.plain) {
+          await fileManager.saveLyrics(musicInfo.id, lyricsResult)
+          console.log(`[歌词] 已本地化: ${musicInfo.title}`)
+        }
+      } catch (e) {
+        console.log(`[歌词] 本地化失败（忽略）: ${e}`)
+      }
+
       await database.updateDownloadTask(taskId, "completed", 100)
       console.log(`[下载成功] ${musicInfo.title}`)
       this.progressCallbacks.get(musicId)?.(1, "completed")
@@ -505,6 +522,7 @@ class FetchDownloader {
   async deleteDownload(musicId: string): Promise<void> {
     await fileManager.deleteAudio(musicId)
     await fileManager.deleteCover(musicId)
+    await fileManager.deleteLyrics(musicId)
     await database.updateMusicDownloadStatus(musicId, false)
   }
 

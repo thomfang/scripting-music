@@ -115,33 +115,39 @@ export function Control() {
   }
 
   return (
-    <HStack font={53} tint={"systemPink"} sheet={{isPresented: showQueue,
+    <HStack font={53} tint={"white"} sheet={{isPresented: showQueue,
       onChanged: setShowQueue,
       content: <QueueSheet />
     }}>
-      <Button action={cyclePlayMode} font={20} tint={playMode === "sequential" ? "secondaryLabel" : "systemPink"}>
+      <Button action={cyclePlayMode} font={20} tint={playMode === "sequential" ? "rgba(255,255,255,0.55)" : "white"}>
         <Image systemName={PLAY_MODE_ICONS[playMode]} />
       </Button>
       <Spacer />
-      <Button action={() => player.previous()} disabled={!hasPrev}>
-        <Image systemName="backward.circle.fill" fontWeight={"thin"} symbolRenderingMode={"hierarchical"} />
+      <Button action={() => player.previous()} disabled={!hasPrev} tint={hasPrev ? "white" : "rgba(255,255,255,0.3)"}>
+        <Image systemName="backward.fill" font={28} />
       </Button>
       <Spacer />
-      <Button action={() => { isPlaying ? player.pause() : player.play() }}>
-        <Image systemName={isPlaying ? "pause.circle.fill" : "play.circle.fill"} fontWeight={"thin"} symbolRenderingMode={"hierarchical"} />
+      <Button action={() => { isPlaying ? player.pause() : player.play() }} tint={"white"}>
+        <Image
+          systemName={isPlaying ? "pause.circle.fill" : "play.circle.fill"}
+          font={64}
+          symbolRenderingMode={"hierarchical"}
+          scaleEffect={isPlaying ? 1 : 0.92}
+          animation={{ animation: Animation.smooth({ duration: 0.3 }), value: isPlaying }}
+        />
       </Button>
       <Spacer />
-      <Button action={() => player.next()} disabled={!hasNext}>
-        <Image systemName="forward.circle.fill" fontWeight={"thin"} symbolRenderingMode={"hierarchical"} />
+      <Button action={() => player.next()} disabled={!hasNext} tint={hasNext ? "white" : "rgba(255,255,255,0.3)"}>
+        <Image systemName="forward.fill" font={28} />
       </Button>
       <Spacer />
-      <Button action={handleDownloadCurrent} font={20} tint={isDownloaded ? "systemGreen" : "systemPink"} disabled={!currentMusic || isDownloaded || isDownloading}>
+      <Button action={handleDownloadCurrent} font={20} tint={isDownloaded ? "systemGreen" : "white"} disabled={!currentMusic || isDownloaded || isDownloading}>
         {isDownloading
           ? <ProgressView controlSize="small" />
           : <Image systemName={isDownloaded ? "checkmark.circle.fill" : "arrow.down.circle"} />}
       </Button>
       <Spacer />
-      <Button action={() => setShowQueue(true)} font={20} tint="systemPink">
+      <Button action={() => setShowQueue(true)} font={20} tint="white">
         <Image systemName="list.bullet" />
       </Button>
     </HStack>
