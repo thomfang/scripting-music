@@ -6,6 +6,8 @@ import { QueueSheet } from "./queue"
 import { Navigation } from "scripting"
 import { downloadManager } from "../../class/download_manager"
 import { fileManager } from "../../class/file_manager"
+import { music } from "../../class/music"
+import { ITUNES_PREVIEW_PROVIDER } from "../../class/sources/charts"
 
 const PLAY_MODE_ICONS: Record<PlayMode, string> = {
   "sequential": "arrow.right",
@@ -49,6 +51,28 @@ export function Control() {
     if (!currentMusic || isDownloaded || isDownloading) return
     setIsDownloading(true)
     try {
+      // 试听曲（itunes_preview）不能直接下 30s 试听文件：
+      // 先用「歌名 艺人」搜 mp3juice 取首条真实源，再走正常下载链路。
+      if (currentMusic.provider === ITUNES_PREVIEW_PROVIDER) {
+        const real = await resolveRealSource(currentMusic.title, currentMusic.artist)
+        if (!real) {
+          // 找不到真实源，不下载 30s 试听，直接放弃
+          return
+        }
+        await downloadManager.downloadMusic({
+          id: real.id,
+          provider: real.provider,
+          title: real.title || currentMusic.title,
+          artist: real.artist || currentMusic.artist,
+          album: real.album || currentMusic.album,
+          duration: real.duration || currentMusic.duration,
+          cover: real.cover || currentMusic.cover_url || "",
+          // 不传 audio_url，让下载链路实时 resolve 真实可下载直链
+          source_id: real.source_id,
+        })
+        setIsDownloaded(true)
+        return
+      }
       await downloadManager.downloadMusic({
         id: currentMusic.id,
         provider: currentMusic.provider ?? "",
@@ -63,6 +87,30 @@ export function Control() {
       setIsDownloaded(true)
     } finally {
       setIsDownloading(false)
+    }
+  }
+
+  // 用「歌名 艺人」搜 mp3juice，取首条真实可下载源
+  async function resolveRealSource(title: string, artist: string) {
+    try {
+      const q = artist ? `${title} ${artist}` : title
+      const { items } = await music.search(q)
+      const top = items?.[0]
+      if (!top) return null
+      return {
+        id: top.id,
+        title: top.title,
+        artist: top.artist ?? "",
+        album: top.album ?? "",
+        duration: top.duration ?? 0,
+        cover: top.cover ?? "",
+        provider: top.provider,
+        // mp3juice 的 source_id 即 id（下载链路会用它实时 resolve 真实直链）
+        source_id: top.id,
+      }
+    } catch (e) {
+      console.error("[播放页] 解析真实下载源失败:", e)
+      return null
     }
   }
 
