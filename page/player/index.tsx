@@ -13,36 +13,45 @@ export function PlayerView() {
 function PlayerPage() {
   return (
     <ZStack>
-      {/* 模糊封面动态背景，铺满整个播放页 */}
+      {/* 全屏动态背景（MeshGradient / 模糊封面） */}
       <CoverBackground
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
         ignoresSafeArea={true}
       />
 
       <VStack
-        modifiers={modifiers().padding({ leading: true, trailing: true })}
+        spacing={0}
+        modifiers={modifiers().padding({ leading: 24, trailing: 24 })}
       >
         <Capsule
-          fill={"rgba(255,255,255,0.4)"}
-          frame={{ width: 40, height: 5 }}
-          padding={{ top: 9, bottom: 20 }}
+          fill={"rgba(255,255,255,0.5)"}
+          frame={{ width: 38, height: 5 }}
+          padding={{ top: 10, bottom: 18 }}
         />
 
+        {/* 专辑封面：大尺寸方形 + 柔和投影 */}
         <Cover
-          frame={{ maxWidth: "infinity", maxHeight: 300 }}
-          clipShape={{ type: "rect", cornerRadius: 18 }}
-          shadow={{ color: "rgba(0,0,0,0.5)", radius: 24, y: 10 }}
-          padding={{ bottom: 28 }}
+          frame={{ maxWidth: "infinity", maxHeight: 330 }}
+          aspectRatio={{ value: 1, contentMode: "fit" }}
+          clipShape={{ type: "rect", cornerRadius: 14 }}
+          shadow={{ color: "rgba(0,0,0,0.45)", radius: 30, y: 14 }}
         />
 
+        <Spacer />
+
+        {/* 标题 / 艺人 */}
         <Title />
 
-        <Spacer /><Lyric padding={{ top: 8, bottom: 8 }} /><Spacer />
+        {/* 进度条 */}
+        <ProgressSlider padding={{ top: 18 }} />
 
-        <VStack padding={{ bottom: true }} spacing={6}>
-          <ProgressSlider />
-          <Control padding={{ top: true, bottom: true }} />
-        </VStack>
+        {/* 歌词（紧凑预览） */}
+        <Lyric padding={{ top: 10, bottom: 6 }} />
+
+        <Spacer />
+
+        {/* 控制区：传输行 + 工具行 */}
+        <Control padding={{ top: 8, bottom: 18 }} />
       </VStack>
     </ZStack>
   )
