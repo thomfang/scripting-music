@@ -290,7 +290,7 @@ function ArtistHeader({ artist }: { artist: string }) {
   )
 
   const foreground = (
-    <VStack spacing={10} padding={{ vertical: 18, horizontal: 16 }} frame={{ maxWidth: "infinity" }}>
+    <VStack spacing={10} padding={{ vertical: 18, horizontal: 16 }}>
       {avatar}
       <Text font="title2" fontWeight="bold" foregroundStyle={hasBanner ? "white" : "label"} lineLimit={2} multilineTextAlignment="center">{info.name}</Text>
       {chips.length > 0 && (
