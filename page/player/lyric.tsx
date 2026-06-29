@@ -3,9 +3,9 @@ import { usePlayerState, usePlayerProgress } from "../../class/player_state"
 import { lyrics, LyricLine, LyricsResult } from "../../class/sources/lyrics"
 import { fileManager } from "../../class/file_manager"
 
-const LYRIC_HEIGHT = 150
+const DEFAULT_LYRIC_HEIGHT = 150
 
-export function Lyric() {
+export function Lyric({ height = DEFAULT_LYRIC_HEIGHT, onToggle, animation }: { height?: number; onToggle?: () => void; animation?: any }) {
   const { currentMusic } = usePlayerState()
   const { currentTime } = usePlayerProgress()
   const [result, setResult] = useState<LyricsResult | null>(null)
@@ -57,32 +57,46 @@ export function Lyric() {
   }, [result?.synced, currentTime])
 
   if (!currentMusic) {
-    return <Placeholder text="暂无播放" />
+    return <LyricTapArea onToggle={onToggle} animation={animation}><Placeholder text="暂无播放" height={height} /></LyricTapArea>
   }
   if (loading && !result) {
-    return <Placeholder text="加载歌词…" />
+    return <LyricTapArea onToggle={onToggle} animation={animation}><Placeholder text="加载歌词…" height={height} /></LyricTapArea>
   }
   if (result?.synced && result.synced.length > 0) {
-    return <SyncedLyric lines={result.synced} activeIndex={activeIndex} />
+    return <LyricTapArea onToggle={onToggle} animation={animation}><SyncedLyric lines={result.synced} activeIndex={activeIndex} height={height} /></LyricTapArea>
   }
   if (result?.plain) {
-    return <PlainLyric text={result.plain} />
+    return <LyricTapArea onToggle={onToggle} animation={animation}><PlainLyric text={result.plain} height={height} /></LyricTapArea>
   }
-  return <Placeholder text="暂无歌词" />
+  return <LyricTapArea onToggle={onToggle} animation={animation}><Placeholder text="暂无歌词" height={height} /></LyricTapArea>
 }
 
-function Placeholder({ text }: { text: string }) {
+// 歌词区整体可点击：点击切换「歌词放大 / 封面收起」。contentShape=rect 让透明区也可点。
+function LyricTapArea({ children, onToggle, animation }: { children: JSX.Element; onToggle?: () => void; animation?: any }) {
   return (
-    <VStack frame={{ width: "infinity", height: LYRIC_HEIGHT }} alignment="center">
+    <VStack
+      frame={{ maxWidth: "infinity" }}
+      contentShape={"rect"}
+      onTapGesture={onToggle}
+      animation={animation}
+    >
+      {children}
+    </VStack>
+  )
+}
+
+function Placeholder({ text, height }: { text: string; height: number }) {
+  return (
+    <VStack frame={{ width: "infinity", height }} alignment="center">
       <Text foregroundStyle="rgba(255,255,255,0.5)" font="subheadline">{text}</Text>
     </VStack>
   )
 }
 
-function SyncedLyric({ lines, activeIndex }: { lines: LyricLine[]; activeIndex: number }) {
+function SyncedLyric({ lines, activeIndex, height }: { lines: LyricLine[]; activeIndex: number; height: number }) {
   return (
     <ScrollViewReader>
-      {proxy => <SyncedLyricList proxy={proxy} lines={lines} activeIndex={activeIndex} />}
+      {proxy => <SyncedLyricList proxy={proxy} lines={lines} activeIndex={activeIndex} height={height} />}
     </ScrollViewReader>
   )
 }
@@ -91,10 +105,12 @@ function SyncedLyricList({
   proxy,
   lines,
   activeIndex,
+  height,
 }: {
   proxy: { scrollTo: (id: string | number, anchor?: any) => void }
   lines: LyricLine[]
   activeIndex: number
+  height: number
 }) {
   // 高亮行变化时自动滚动到中间
   useEffect(() => {
@@ -104,7 +120,7 @@ function SyncedLyricList({
   }, [activeIndex])
 
   return (
-    <ScrollView axes="vertical" frame={{ maxWidth: "infinity", height: LYRIC_HEIGHT }}>
+    <ScrollView axes="vertical" frame={{ maxWidth: "infinity", height }}>
       <VStack alignment="center" spacing={10} padding={{ top: 8, bottom: 8 }} frame={{ maxWidth: "infinity" }}>
         {lines.map((line, i) => (
           <LyricRow key={i} index={i} text={line.text} active={i === activeIndex} />
@@ -136,10 +152,10 @@ function LyricRow({ index, text, active }: { index: number; text: string; active
   )
 }
 
-function PlainLyric({ text }: { text: string }) {
+function PlainLyric({ text, height }: { text: string; height: number }) {
   const linesArr = useMemo(() => text.split(/\r?\n/), [text])
   return (
-    <ScrollView axes="vertical" frame={{ maxWidth: "infinity", height: LYRIC_HEIGHT }}>
+    <ScrollView axes="vertical" frame={{ maxWidth: "infinity", height }}>
       <VStack alignment="center" spacing={8} padding={{ top: 8, bottom: 8 }} frame={{ maxWidth: "infinity" }}>
         {linesArr.map((l, i) => (
           <Text
