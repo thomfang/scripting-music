@@ -112,14 +112,25 @@ function parseEntry(entry: any): ChartTrack | null {
   }
 }
 
+/** 从 RSS entry 取发行时间戳（ms，无法解析返回 0）。 */
+function releaseDateOf(entry: any): number {
+  const s = pick(entry, "im:releaseDate.label")
+  if (!s) return 0
+  const t = Date.parse(s)
+  return isNaN(t) ? 0 : t
+}
+
 type CacheEntry = { data: ChartTrack[]; ts: number }
 const CACHE_TTL = 10 * 60 * 1000
 const cache = new Map<string, CacheEntry>()
 
 const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
 
-/** “新歌”用的口味向检索词（欧美另类/独立）。 */
-const NEW_SONG_TERMS = ["alternative", "indie", "singer songwriter", "dream pop", "indie rock"]
+/** “新歌”门槛：只保留近 N 个月内发行的曲目（跨流派拉 topsongs 后过滤）。 */
+const NEW_SONG_MAX_AGE_MONTHS = 9
+const NEW_SONG_MAX_AGE_MS = NEW_SONG_MAX_AGE_MONTHS * 30 * 24 * 3600 * 1000
+/** 新歌池取样的流派（口味向：另类/唱作人/电子/摇滚/流行）。 */
+const NEW_SONG_GENRES = [20, 10, 7, 21, 14]
 
 /** 升级 artworkUrl100 为 600x600。 */
 function upgradeArtwork(url: string): string {
@@ -194,29 +205,36 @@ class ChartsSource {
   }
 
   /**
-   * 新歌（跨流派）：iTunes Search 多检索词混合 → 按 releaseDate 降序。
-   * 旧版 RSS 无歌曲级「新歌」feed，故用 Search。
+   * 新歌（跨流派）：跨多个口味向流派拉 topsongs RSS，按 releaseDate 过滤出近
+   * N 个月内发行的曲目，再按发行时间降序。
+   *
+   * 为何不用 Search：iTunes Search 按相关性/热度排序，新歌没热度永远排不进前列，
+   * 实测返回全是 1~3 年前的老歌；topsongs RSS 自带 releaseDate 且含当日新发行的热门曲。
    */
   async fetchNewSongs(limit = 40, country = "us"): Promise<ChartTrack[]> {
     const cacheKey = `${country}:new:${limit}`
     const hit = cache.get(cacheKey)
     if (hit && Date.now() - hit.ts < CACHE_TTL) return hit.data
 
-    const perTerm = Math.max(12, Math.ceil(limit / NEW_SONG_TERMS.length) + 6)
+    const now = Date.now()
     const results = await Promise.all(
-      NEW_SONG_TERMS.map(async term => {
+      NEW_SONG_GENRES.map(async genreId => {
         try {
-          const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&country=${country}&limit=${perTerm}`
+          const url = `https://itunes.apple.com/${country}/rss/topsongs/limit=100/genre=${genreId}/json`
           const resp = await fetch(url, { headers: { "User-Agent": UA, "Accept": "application/json" } })
           if (!resp.ok) return [] as { t: ChartTrack; date: number }[]
           const json = await resp.json()
-          const arr = Array.isArray(json?.results) ? json.results : []
-          return arr.map((r: any) => {
-            const t = parseSearchTrack(r)
-            if (!t) return null
-            const date = r.releaseDate ? Date.parse(r.releaseDate) : 0
-            return { t, date: isNaN(date) ? 0 : date }
-          }).filter(Boolean) as { t: ChartTrack; date: number }[]
+          const rawEntry = pick(json, "feed.entry")
+          const entries = Array.isArray(rawEntry) ? rawEntry : rawEntry ? [rawEntry] : []
+          const out: { t: ChartTrack; date: number }[] = []
+          for (const e of entries) {
+            const date = releaseDateOf(e)
+            // 只保留近 N 个月内发行的（无发行时间的丢弃，避免混入老歌）
+            if (!date || now - date > NEW_SONG_MAX_AGE_MS) continue
+            const t = parseEntry(e)
+            if (t) out.push({ t, date })
+          }
+          return out
         } catch {
           return [] as { t: ChartTrack; date: number }[]
         }
