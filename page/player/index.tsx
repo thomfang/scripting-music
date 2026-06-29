@@ -4,13 +4,16 @@ import { Title } from "./title"
 import { ProgressSlider } from "./slider"
 import { Control } from "./control"
 import { Lyric } from "./lyric"
-import { PlayerProgressProvider } from "../../class/player_state"
+import { PlayerProgressProvider, usePlayerState } from "../../class/player_state"
 
 export function PlayerView() {
   return <PlayerProgressProvider><PlayerPage /></PlayerProgressProvider>
 }
 
 function PlayerPage() {
+  // 用当前歌曲 id 作为 Lyric 的 key：歌曲身份变化时强制重挂载，
+  // 确保「播放一段时间后再打开播放页」时歌词按当前歌可靠拉取。
+  const { currentMusic } = usePlayerState()
   return (
     <ZStack>
       {/* 全屏动态背景（MeshGradient / 模糊封面） */}
@@ -19,8 +22,12 @@ function PlayerPage() {
         ignoresSafeArea={true}
       />
 
+      {/* 根 VStack 显式钉在屏幕宽度内。
+          重要：sheet 会向内容提出「无限宽」布局，`maxWidth:"infinity"` 并不会把 VStack 钉在屏宽，
+          于是长歌词行的 ideal 单行宽会把整列撑宽、左右对称被裁。用显式 `width: 屏宽` 才能钉住。 */}
       <VStack
         spacing={0}
+        frame={{ width: Device.screen.width }}
         modifiers={modifiers().padding({ leading: 24, trailing: 24 })}
       >
         <Capsule
@@ -43,7 +50,7 @@ function PlayerPage() {
 
         {/* 歌词占据弹性中间区 */}
         <Spacer />
-        <Lyric />
+        <Lyric key={currentMusic?.id ?? "none"} />
         <Spacer />
 
         {/* 控制区：传输行 + 工具行 */}

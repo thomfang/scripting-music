@@ -73,7 +73,7 @@ export function Lyric() {
 
 function Placeholder({ text }: { text: string }) {
   return (
-    <VStack frame={{ height: LYRIC_HEIGHT }} alignment="center">
+    <VStack frame={{ width: "infinity", height: LYRIC_HEIGHT }} alignment="center">
       <Text foregroundStyle="rgba(255,255,255,0.5)" font="subheadline">{text}</Text>
     </VStack>
   )
@@ -104,8 +104,8 @@ function SyncedLyricList({
   }, [activeIndex])
 
   return (
-    <ScrollView axes="vertical" frame={{ height: LYRIC_HEIGHT }}>
-      <VStack alignment="center" spacing={10} padding={{ top: 8, bottom: 8 }}>
+    <ScrollView axes="vertical" frame={{ maxWidth: "infinity", height: LYRIC_HEIGHT }}>
+      <VStack alignment="center" spacing={10} padding={{ top: 8, bottom: 8 }} frame={{ maxWidth: "infinity" }}>
         {lines.map((line, i) => (
           <LyricRow key={i} index={i} text={line.text} active={i === activeIndex} />
         ))}
@@ -126,6 +126,7 @@ function LyricRow({ index, text, active }: { index: number; text: string; active
     <Text
       {...extraProps}
       multilineTextAlignment="center"
+      frame={{ maxWidth: "infinity" }}
       font={active ? "headline" : "subheadline"}
       fontWeight={active ? "bold" : "regular"}
       foregroundStyle={active ? "white" : "rgba(255,255,255,0.4)"}
@@ -138,12 +139,13 @@ function LyricRow({ index, text, active }: { index: number; text: string; active
 function PlainLyric({ text }: { text: string }) {
   const linesArr = useMemo(() => text.split(/\r?\n/), [text])
   return (
-    <ScrollView axes="vertical" frame={{ height: LYRIC_HEIGHT }}>
-      <VStack alignment="center" spacing={8} padding={{ top: 8, bottom: 8 }}>
+    <ScrollView axes="vertical" frame={{ maxWidth: "infinity", height: LYRIC_HEIGHT }}>
+      <VStack alignment="center" spacing={8} padding={{ top: 8, bottom: 8 }} frame={{ maxWidth: "infinity" }}>
         {linesArr.map((l, i) => (
           <Text
             key={i}
             multilineTextAlignment="center"
+            frame={{ maxWidth: "infinity" }}
             font="subheadline"
             foregroundStyle="rgba(255,255,255,0.6)"
           >
