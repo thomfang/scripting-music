@@ -4,6 +4,7 @@ import {
   List,
   Section,
   FlowLayout,
+  ScrollView,
   HStack,
   VStack,
   ZStack,
@@ -16,7 +17,7 @@ import {
   ProgressView,
   ContentUnavailableView,
 } from "scripting"
-import { charts, CHART_GENRES, ChartTrack, ChartGenre, ITUNES_PREVIEW_PROVIDER } from "../../class/sources/charts"
+import { charts, CHART_GENRES, SEED_ARTISTS, NEW_SONGS_GENRE_ID, ChartTrack, ChartGenre, ITUNES_PREVIEW_PROVIDER } from "../../class/sources/charts"
 import { music } from "../../class/music"
 import { player } from "../../class/player"
 import { database, Music } from "../../class/database"
@@ -58,18 +59,45 @@ export function DiscoverView() {
   const [resolvingId, setResolvingId] = useState<string | null>(null)
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false)
   const [pendingTrack, setPendingTrack] = useState<ChartTrack | null>(null)
+  // 为你推荐（种子艺人热门曲，汇总）
+  const [recommend, setRecommend] = useState<ChartTrack[] | null>(null)
   const playerState = usePlayerState()
 
   useEffect(() => {
     loadGenre(genre)
   }, [genre.id])
 
+  // 首屏加载一次推荐（并发拉种子艺人，失败静默）
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const lists = await Promise.all(
+          SEED_ARTISTS.map(a => charts.fetchArtistTop(a, 6, "us").catch(() => []))
+        )
+        if (!alive) return
+        // 交错混合各艺人的曲目，避免扎堆
+        const merged: ChartTrack[] = []
+        const maxLen = Math.max(0, ...lists.map(l => l.length))
+        for (let i = 0; i < maxLen; i++) {
+          for (const l of lists) if (l[i]) merged.push(l[i])
+        }
+        setRecommend(merged)
+      } catch {
+        if (alive) setRecommend([])
+      }
+    })()
+    return () => { alive = false }
+  }, [])
+
   async function loadGenre(g: ChartGenre) {
     setLoading(true)
     setError(null)
     setTracks(null)
     try {
-      const data = await charts.fetchChart(g.id, 40, "us")
+      const data = g.id === NEW_SONGS_GENRE_ID
+        ? await charts.fetchNewSongs(40, "us")
+        : await charts.fetchChart(g.id, 40, "us")
       setTracks(data)
     } catch (e) {
       console.error("[发现] 加载榜单失败:", e)
@@ -88,11 +116,21 @@ export function DiscoverView() {
 
   // 行点击：把整个栏目设为待播队列，从当前歌开始即时试听
   async function previewPlay(t: ChartTrack) {
-    const list = tracks ?? []
+    await playFromList(tracks ?? [], t)
+  }
+
+  // 推荐卡点击：以推荐列表为队列试听
+  async function recommendPlay(t: ChartTrack) {
+    await playFromList(recommend ?? [], t)
+  }
+
+  // 公用：以某列表为队列，从点击项开始连续试听
+  async function playFromList(list: ChartTrack[], t: ChartTrack) {
     const queue = list.map(trackToPreviewMusic)
     const idx = list.findIndex(x => x.id === t.id)
-    player.setQueue(queue, idx >= 0 ? idx : 0)
-    await player.play(queue[idx >= 0 ? idx : 0])
+    const start = idx >= 0 ? idx : 0
+    player.setQueue(queue, start)
+    await player.play(queue[start])
   }
 
   // 用 "歌名 艺人" 搜 mp3juice，取首条真实可下载源
@@ -201,6 +239,33 @@ export function DiscoverView() {
         content: <PlaylistPickerContent onSelect={addToPlaylist} onDismiss={dismissPlaylistPicker} />,
       }}
     >
+      {/* 为你推荐 — 顺顶部横向卡片墙 */}
+      {recommend && recommend.length > 0 && (
+        <Section
+          header={
+            <HStack spacing={6} padding={{ top: 2, bottom: 2 }}>
+              <Image systemName="sparkles" font="subheadline" foregroundStyle="systemPink" />
+              <Text font="title3" fontWeight="bold" foregroundStyle="label">为你推荐</Text>
+              <Spacer />
+              <Text font="caption" foregroundStyle="tertiaryLabel">基于你的口味</Text>
+            </HStack>
+          }
+        >
+          <ScrollView axes="horizontal" listRowInsets={0} listRowSeparator="hidden">
+            <HStack spacing={14} padding={{ horizontal: 16, vertical: 6 }}>
+              {recommend.map(t => (
+                <RecommendCard
+                  key={t.id}
+                  track={t}
+                  isPlaying={playerState.currentMusic?.id === t.id}
+                  onTap={() => recommendPlay(t)}
+                />
+              ))}
+            </HStack>
+          </ScrollView>
+        </Section>
+      )}
+
       {/* 流派分类 chips — FlowLayout 自动换行 */}
       <FlowLayout spacing={10}>
         {CHART_GENRES.map(g => {
@@ -250,7 +315,7 @@ export function DiscoverView() {
                 {`${genre.emoji ?? ""} ${genre.label}`}
               </Text>
               <Text font="subheadline" fontWeight="semibold" foregroundStyle="secondaryLabel">
-                热门榜
+                {genre.id === NEW_SONGS_GENRE_ID ? "最新发行" : "热门榜"}
               </Text>
               <Spacer />
               <HStack spacing={3}>
@@ -382,5 +447,58 @@ function DiscoverRow({
         <Image systemName="play.circle" font="title3" foregroundStyle="tertiaryLabel" />
       )}
     </HStack>
+  )
+}
+
+// ---- 为你推荐卡片 ----
+type RecCardProps = {
+  track: ChartTrack
+  isPlaying: boolean
+  onTap: () => void
+}
+
+function RecommendCard({ track, isPlaying, onTap }: RecCardProps) {
+  const [coverError, setCoverError] = useState(false)
+  return (
+    <Button action={onTap} buttonStyle="plain">
+      <VStack alignment="leading" spacing={6} frame={{ width: 130 }}>
+        <ZStack alignment="bottomTrailing">
+          {track.cover && !coverError ? (
+            <Image
+              imageUrl={track.cover}
+              resizable={true}
+              scaleToFill={true}
+              frame={{ width: 130, height: 130 }}
+              clipShape={{ type: "rect", cornerRadius: 14 }}
+              shadow={{ color: "rgba(0,0,0,0.22)", radius: 6, x: 0, y: 3 }}
+              onError={() => setCoverError(true)}
+              placeholder={<Image systemName="music.note" frame={{ width: 130, height: 130 }} />}
+            />
+          ) : (
+            <Image
+              systemName="music.note"
+              font="largeTitle"
+              tint="secondaryLabel"
+              frame={{ width: 130, height: 130 }}
+              background="secondarySystemBackground"
+              clipShape={{ type: "rect", cornerRadius: 14 }}
+            />
+          )}
+          {/* 播放角标 */}
+          <Image
+            systemName={isPlaying ? "waveform.circle.fill" : "play.circle.fill"}
+            font="title2"
+            foregroundStyle={isPlaying ? "systemPink" : "white"}
+            padding={6}
+          />
+        </ZStack>
+        <Text font="subheadline" fontWeight="semibold" lineLimit={1} foregroundStyle={isPlaying ? "systemPink" : "label"}>
+          {track.title}
+        </Text>
+        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>
+          {track.artist}
+        </Text>
+      </VStack>
+    </Button>
   )
 }

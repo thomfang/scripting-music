@@ -23,14 +23,25 @@ export type ChartGenre = {
   emoji?: string
 }
 
-/** 口味向预设流派清单（欧美另类/独立优先）。 */
+/** “新歌”特殊项的 genre id 哨兵值（不是真 genre，走 Search 新歌逻辑）。 */
+export const NEW_SONGS_GENRE_ID = -1
+
+/** 口味向预设流派清单（欧美另类/独立优先）。首项为跨流派「新歌」。 */
 export const CHART_GENRES: readonly ChartGenre[] = [
+  { id: NEW_SONGS_GENRE_ID, key: "new", label: "新歌", emoji: "🆕" },
   { id: 20, key: "alternative", label: "另类", emoji: "🎸" },
   { id: 10, key: "singer-songwriter", label: "唱作人", emoji: "🎤" },
   { id: 7, key: "electronic", label: "电子", emoji: "🎹" },
   { id: 21, key: "rock", label: "摇滚", emoji: "🪕" },
   { id: 14, key: "pop", label: "流行", emoji: "🎧" },
 ] as const
+
+/** 「为你推荐」种子艺人（用户口味）。artistId 为已知值，缺则运行时 Search 解析。 */
+export const SEED_ARTISTS: readonly { name: string; artistId?: number }[] = [
+  { name: "Radiohead", artistId: 657515 },
+  { name: "Novo Amor" },
+  { name: "Cigarettes After Sex" },
+]
 
 export type ChartTrack = {
   /** 统一 id：itp:<trackId>，避免与 mp3juice id 冲突 */
@@ -105,6 +116,51 @@ type CacheEntry = { data: ChartTrack[]; ts: number }
 const CACHE_TTL = 10 * 60 * 1000
 const cache = new Map<string, CacheEntry>()
 
+const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
+
+/** “新歌”用的口味向检索词（欧美另类/独立）。 */
+const NEW_SONG_TERMS = ["alternative", "indie", "singer songwriter", "dream pop", "indie rock"]
+
+/** 升级 artworkUrl100 为 600x600。 */
+function upgradeArtwork(url: string): string {
+  return (url || "").replace(/\/\d+x\d+bb\.(jpg|png)/i, "/600x600bb.$1")
+}
+
+/** 解析 iTunes Search/Lookup 的 track 对象为 ChartTrack。 */
+function parseSearchTrack(r: any): ChartTrack | null {
+  if (!r || r.wrapperType !== "track" || r.kind !== "song") return null
+  const previewUrl = r.previewUrl
+  const title = r.trackName
+  if (!previewUrl || !title) return null
+  const trackId = String(r.trackId ?? "")
+  const durMs = typeof r.trackTimeMillis === "number" ? r.trackTimeMillis : 0
+  return {
+    id: `itp:${trackId || title}`,
+    trackId,
+    title,
+    artist: r.artistName ?? "",
+    album: r.collectionName ?? "",
+    cover: upgradeArtwork(r.artworkUrl100 ?? ""),
+    previewUrl,
+    // 试听仍是 30s，但保留真实时长供展示
+    duration: durMs > 0 ? Math.round(durMs / 1000) : 30,
+    provider: ITUNES_PREVIEW_PROVIDER,
+  }
+}
+
+/** 按 trackId 去重。 */
+function dedupe(tracks: ChartTrack[]): ChartTrack[] {
+  const seen = new Set<string>()
+  const out: ChartTrack[] = []
+  for (const t of tracks) {
+    const k = t.trackId || t.title
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(t)
+  }
+  return out
+}
+
 class ChartsSource {
   /**
    * 拉取某流派榜单。
@@ -135,6 +191,89 @@ class ChartsSource {
     }
     cache.set(cacheKey, { data: tracks, ts: Date.now() })
     return tracks
+  }
+
+  /**
+   * 新歌（跨流派）：iTunes Search 多检索词混合 → 按 releaseDate 降序。
+   * 旧版 RSS 无歌曲级「新歌」feed，故用 Search。
+   */
+  async fetchNewSongs(limit = 40, country = "us"): Promise<ChartTrack[]> {
+    const cacheKey = `${country}:new:${limit}`
+    const hit = cache.get(cacheKey)
+    if (hit && Date.now() - hit.ts < CACHE_TTL) return hit.data
+
+    const perTerm = Math.max(12, Math.ceil(limit / NEW_SONG_TERMS.length) + 6)
+    const results = await Promise.all(
+      NEW_SONG_TERMS.map(async term => {
+        try {
+          const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&country=${country}&limit=${perTerm}`
+          const resp = await fetch(url, { headers: { "User-Agent": UA, "Accept": "application/json" } })
+          if (!resp.ok) return [] as { t: ChartTrack; date: number }[]
+          const json = await resp.json()
+          const arr = Array.isArray(json?.results) ? json.results : []
+          return arr.map((r: any) => {
+            const t = parseSearchTrack(r)
+            if (!t) return null
+            const date = r.releaseDate ? Date.parse(r.releaseDate) : 0
+            return { t, date: isNaN(date) ? 0 : date }
+          }).filter(Boolean) as { t: ChartTrack; date: number }[]
+        } catch {
+          return [] as { t: ChartTrack; date: number }[]
+        }
+      })
+    )
+    const merged = results.flat()
+    merged.sort((a, b) => b.date - a.date) // 最新在前
+    const tracks = dedupe(merged.map(x => x.t)).slice(0, limit)
+    cache.set(cacheKey, { data: tracks, ts: Date.now() })
+    return tracks
+  }
+
+  /** 解析艺人名 → artistId（Search entity=musicArtist）。 */
+  private async resolveArtistId(name: string, country = "us"): Promise<number | null> {
+    try {
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(name)}&media=music&entity=musicArtist&limit=1&country=${country}`
+      const resp = await fetch(url, { headers: { "User-Agent": UA, "Accept": "application/json" } })
+      if (!resp.ok) return null
+      const json = await resp.json()
+      const a = Array.isArray(json?.results) ? json.results[0] : null
+      return a?.artistId ?? null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * 为你推荐：拉某种子艺人的热门曲（lookup id=artistId）。
+   * @param artist 名称（可选预置 artistId）
+   */
+  async fetchArtistTop(
+    artist: { name: string; artistId?: number },
+    limit = 12,
+    country = "us"
+  ): Promise<ChartTrack[]> {
+    const cacheKey = `${country}:artist:${artist.name}:${limit}`
+    const hit = cache.get(cacheKey)
+    if (hit && Date.now() - hit.ts < CACHE_TTL) return hit.data
+
+    let id = artist.artistId ?? null
+    if (!id) id = await this.resolveArtistId(artist.name, country)
+    if (!id) return []
+
+    try {
+      const url = `https://itunes.apple.com/lookup?id=${id}&entity=song&limit=${limit + 1}&country=${country}`
+      const resp = await fetch(url, { headers: { "User-Agent": UA, "Accept": "application/json" } })
+      if (!resp.ok) return []
+      const json = await resp.json()
+      const arr = Array.isArray(json?.results) ? json.results : []
+      const tracks = dedupe(
+        arr.map((r: any) => parseSearchTrack(r)).filter(Boolean) as ChartTrack[]
+      ).slice(0, limit)
+      cache.set(cacheKey, { data: tracks, ts: Date.now() })
+      return tracks
+    } catch {
+      return []
+    }
   }
 
   clearCache(): void {
