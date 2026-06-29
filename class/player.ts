@@ -270,11 +270,19 @@ class Player {
         console.log(`[Player] 本地文件不存在，尝试使用在线地址`)
         audioUrl = music.audio_url
         
-        // 如果 audio_url 为空但有 provider，动态生成
+        // 如果 audio_url 为空但有 provider，动态解析（兼容 mp3juice 等异步源）
         if (!audioUrl && music.provider) {
-          console.log(`[Player] 通过 provider 生成播放地址`)
+          console.log(`[Player] 通过 provider 解析播放地址`)
           const { music: musicService } = await import("./music")
-          audioUrl = musicService.getAudioUrl(music.source_id ?? music.id, music.provider as any)
+          try {
+            audioUrl = await musicService.resolveAudioUrl({
+              id: music.id, provider: music.provider, title: music.title,
+              artist: music.artist, album: music.album, duration: music.duration,
+              source_id: music.source_id,
+            })
+          } catch (e) {
+            console.error(`[Player] 解析播放地址失败: ${e}`)
+          }
         }
         
         if (!audioUrl) {
@@ -288,11 +296,22 @@ class Player {
     } else {
       audioUrl = music.audio_url
       
-      // 如果 audio_url 为空但有 provider，动态生成
-      if (!audioUrl && music.provider) {
-        console.log(`[Player] 通过 provider 生成播放地址`)
+      // mp3juice 等短时直链源不久存 audio_url，强制实时解析
+      const isShortLivedSource = music.provider === "mp3juice"
+      // 如果 audio_url 为空但有 provider，或为短时源，动态解析
+      if ((!audioUrl || isShortLivedSource) && music.provider) {
+        console.log(`[Player] 通过 provider 解析播放地址`)
         const { music: musicService } = await import("./music")
-        audioUrl = musicService.getAudioUrl(music.source_id ?? music.id, music.provider as any)
+        try {
+          audioUrl = await musicService.resolveAudioUrl({
+            id: music.id, provider: music.provider, title: music.title,
+            artist: music.artist, album: music.album, duration: music.duration,
+            source_id: music.source_id,
+            audio_url: isShortLivedSource ? undefined : music.audio_url,
+          })
+        } catch (e) {
+          console.error(`[Player] 解析播放地址失败: ${e}`)
+        }
       }
       
       if (!audioUrl) {

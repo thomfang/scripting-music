@@ -83,11 +83,20 @@ class FetchDownloader {
 
   private async resolveDownloadInfo(info: MusicInfo): Promise<ResolvedMusicInfo> {
     const primaryProvider = this.normalizeProvider(info.provider)
+    const isShortLived = info.provider === "mp3juice"
+    const resolvedUrl = (isShortLived || !info.audio_url)
+      ? await music.resolveAudioUrl({
+          id: info.id, provider: info.provider, title: info.title,
+          artist: info.artist, album: info.album, duration: info.duration,
+          source_id: info.source_id ?? info.id,
+          audio_url: isShortLived ? undefined : info.audio_url,
+        })
+      : info.audio_url
     const initialInfo: ResolvedMusicInfo = {
       ...info,
       provider: primaryProvider,
       source_id: info.source_id ?? info.id,
-      audio_url: info.audio_url || music.getAudioUrl(info.source_id ?? info.id, primaryProvider),
+      audio_url: resolvedUrl,
     }
 
     try {
@@ -105,6 +114,7 @@ class FetchDownloader {
   }
 
   private normalizeProvider(provider: string): MusicProvider {
+    if (provider === "mp3juice") return "mp3juice"
     if (this.retryProviders.includes(provider as MusicProvider)) return provider as MusicProvider
     return "migu"
   }
@@ -149,6 +159,20 @@ class FetchDownloader {
         for (const cand of candidates) {
           const provider = this.normalizeProvider(cand.item.provider)
           const sourceId = cand.item.id
+          let candAudioUrl: string
+          try {
+            candAudioUrl = await music.resolveAudioUrl({
+              id: cand.item.id, provider: cand.item.provider,
+              title: cand.item.title || info.title,
+              artist: cand.item.artist || info.artist,
+              album: cand.item.album || info.album,
+              duration: cand.item.duration || info.duration,
+              source_id: sourceId,
+            })
+          } catch (error) {
+            console.log(`[下载重试] 候选解析失败 ${provider}/${sourceId}: ${error}`)
+            continue
+          }
           const nextInfo: ResolvedMusicInfo = {
             ...info,
             title: cand.item.title || info.title,
@@ -158,7 +182,7 @@ class FetchDownloader {
             cover: cand.item.cover || info.cover,
             provider,
             source_id: sourceId,
-            audio_url: music.getAudioUrl(sourceId, provider),
+            audio_url: candAudioUrl,
           }
           try {
             await this.assertAudioReachable(nextInfo)

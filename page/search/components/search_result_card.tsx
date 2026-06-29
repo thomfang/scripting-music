@@ -32,7 +32,10 @@ export function SearchResultCard({ info, isPlaying, onShowPlaylistPicker }: Prop
   }
 
   async function handlePlay() {
-    const audioUrl = music.getAudioUrl(info.id, info.provider as any)
+    // mp3juice 等短时直链源不预生成 audio_url，由 player 播放时实时解析；
+    // 001co 系同步拼接，提前生成以保持原有行为。
+    const isShortLived = info.provider === "mp3juice"
+    const audioUrl = isShortLived ? "" : music.getAudioUrl(info.id, info.provider as any)
     const musicData: Music = {
       id: info.id,
       title: info.title,
