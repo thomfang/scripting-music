@@ -26,32 +26,28 @@ function PlayerPage() {
         <Capsule
           fill={"rgba(255,255,255,0.5)"}
           frame={{ width: 38, height: 5 }}
-          padding={{ top: 10, bottom: 18 }}
+          padding={{ top: 10, bottom: 20 }}
         />
 
         {/* 专辑封面：大尺寸方形 + 柔和投影 */}
         <Cover
-          frame={{ maxWidth: "infinity", maxHeight: 330 }}
+          frame={{ maxWidth: "infinity", maxHeight: 320 }}
           aspectRatio={{ value: 1, contentMode: "fit" }}
           clipShape={{ type: "rect", cornerRadius: 14 }}
           shadow={{ color: "rgba(0,0,0,0.45)", radius: 30, y: 14 }}
         />
 
+        {/* 标题 + 进度条（紧跟封面，如 Apple Music） */}
+        <Title padding={{ top: 24 }} />
+        <ProgressSlider padding={{ top: 14 }} />
+
+        {/* 歌词占据弹性中间区 */}
         <Spacer />
-
-        {/* 标题 / 艺人 */}
-        <Title />
-
-        {/* 进度条 */}
-        <ProgressSlider padding={{ top: 18 }} />
-
-        {/* 歌词（紧凑预览） */}
-        <Lyric padding={{ top: 10, bottom: 6 }} />
-
+        <Lyric />
         <Spacer />
 
         {/* 控制区：传输行 + 工具行 */}
-        <Control padding={{ top: 8, bottom: 18 }} />
+        <Control padding={{ top: 8, bottom: 20 }} />
       </VStack>
     </ZStack>
   )

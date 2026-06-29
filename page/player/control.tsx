@@ -149,17 +149,17 @@ export function Control() {
       {/* 工具行：播放模式 / 下载 / 队列 */}
       <HStack font={22} frame={{ maxWidth: "infinity" }}>
         <Spacer />
-        <Button action={cyclePlayMode} tint={playMode === "sequential" ? "rgba(255,255,255,0.55)" : "white"}>
+        <Button action={cyclePlayMode} tint={playMode === "sequential" ? "rgba(255,255,255,0.7)" : "white"}>
           <Image systemName={PLAY_MODE_ICONS[playMode]} />
         </Button>
         <Spacer />
-        <Button action={handleDownloadCurrent} tint={isDownloaded ? "systemGreen" : "rgba(255,255,255,0.85)"} disabled={!currentMusic || isDownloaded || isDownloading}>
+        <Button action={handleDownloadCurrent} tint={isDownloaded ? "systemGreen" : "white"} disabled={!currentMusic || isDownloaded || isDownloading}>
           {isDownloading
             ? <ProgressView controlSize="small" />
             : <Image systemName={isDownloaded ? "checkmark.circle.fill" : "arrow.down.circle"} />}
         </Button>
         <Spacer />
-        <Button action={() => setShowQueue(true)} tint="rgba(255,255,255,0.85)">
+        <Button action={() => setShowQueue(true)} tint="white">
           <Image systemName="list.bullet" />
         </Button>
         <Spacer />

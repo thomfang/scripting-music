@@ -52,7 +52,7 @@ function SliderDesc({ currentTime, duration }: { currentTime: number, duration: 
   }
 
   return (
-    <HStack foregroundStyle={"rgba(255,255,255,0.6)"} font={"caption"} fontWeight={"medium"}>
+    <HStack foregroundStyle={"rgba(255,255,255,0.8)"} font={"caption"} fontWeight={"medium"}>
       <Text>{formatTime(currentTime)}</Text>
       <Spacer />
       <Text>{formatTime(duration)}</Text>
