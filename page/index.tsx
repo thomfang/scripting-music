@@ -7,6 +7,7 @@ import {
   Tab,
   TabView,
   useContext,
+  useEffect,
   useObservable,
   VStack,
 } from "scripting"
@@ -14,6 +15,7 @@ import { LibraryView } from "./library"
 import { PlayerView } from "./player"
 import { SearchView } from "./search"
 import { SettingView } from "./setting"
+import { DiscoverView } from "./discover"
 import { PlayerStateProvider } from "../class/player_state"
 import { MiniPlayer } from "./components/mini_player"
 
@@ -45,10 +47,22 @@ export function HomePage() {
   )
 }
 
+const HOME_TAB_KEY = "home_selected_tab"
+const VALID_TABS = [0, 1, 2, 3]
+
 function MainView() {
   const isPresented = useContext(MiniPlayerContext)
   // const dismiss = Navigation.useDismiss()
-  const selection = useObservable<number>(1)
+  const selection = useObservable<number>(() => {
+    const saved = Storage.get<number>(HOME_TAB_KEY)
+    return (saved !== null && VALID_TABS.includes(saved)) ? saved : 1
+  })
+  // 持久化上次停留的 Tab，下次启动恢复
+  useEffect(() => {
+    const cb = (v: number) => Storage.set(HOME_TAB_KEY, v)
+    selection.subscribe(cb)
+    return () => selection.unsubscribe(cb)
+  }, [])
   const dismiss = () => {
     Script.minimize()
   }
@@ -67,6 +81,17 @@ function MainView() {
         <NavigationStack>
           <LibraryView
             navigationTitle={"资料库"}
+            toolbar={{
+              topBarLeading: [<Button title="退出" systemImage="xmark" action={dismiss} />],
+            }}
+          />
+        </NavigationStack>
+      </Tab>
+
+      <Tab title="发现" systemImage="sparkles" value={2}>
+        <NavigationStack>
+          <DiscoverView
+            navigationTitle={"发现"}
             toolbar={{
               topBarLeading: [<Button title="退出" systemImage="xmark" action={dismiss} />],
             }}
