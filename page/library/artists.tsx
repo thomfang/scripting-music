@@ -1,5 +1,6 @@
-import { List, Section, Button, Label, HStack, VStack, Text, Image, Spacer, useEffect, useMemo, useState, Menu, Toolbar, ToolbarItem, NavigationLink, ForEach, useObservable } from "scripting"
+import { List, Section, Button, Label, HStack, VStack, ZStack, Rectangle, Text, Image, Spacer, useEffect, useMemo, useState, Menu, Toolbar, ToolbarItem, NavigationLink, ForEach, useObservable } from "scripting"
 import { database, Music } from "../../class/database"
+import { artistInfo, ArtistInfo } from "../../class/sources/artist_info"
 import { player } from "../../class/player"
 import { usePlayerState } from "../../class/player_state"
 import { fileManager } from "../../class/file_manager"
@@ -132,6 +133,7 @@ function ArtistDetail({ artist, musics: initialMusics }: { artist: string, music
         </Toolbar>
       }
     >
+      {!isEditing && <ArtistHeader artist={artist} />}
       {!isEditing && (
         <Section>
           <Button action={async () => { player.setQueue(filtered, 0); await player.play(filtered[0]) }}>
@@ -193,15 +195,153 @@ export function ArtistsView() {
         <NavigationLink
           key={item.artist}
           destination={<ArtistDetail artist={item.artist} musics={item.musics} />}>
-          <HStack spacing={12}>
-            <Image systemName="person.circle.fill" font="largeTitle" tint="accentColor" frame={{ width: 40, height: 40 }} />
-            <VStack alignment="leading" spacing={2}>
-              <Text font="headline" lineLimit={1}>{item.artist}</Text>
-              <Text font="subheadline" foregroundStyle="secondaryLabel">{item.count} 首歌曲</Text>
-            </VStack>
-          </HStack>
+          <ArtistRowContent artist={item.artist} count={item.count} />
         </NavigationLink>
       ))}
     </List>
+  )
+}
+
+/** 列表行：圆形真实头像懒加载，查不到/加载失败降级到占位。 */
+function ArtistRowContent({ artist, count }: { artist: string, count: number }) {
+  const [thumb, setThumb] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    artistInfo.fetch(artist).then(info => {
+      if (alive && info?.thumb) setThumb(info.thumb)
+    }).catch(() => { })
+    return () => { alive = false }
+  }, [artist])
+
+  return (
+    <HStack spacing={12}>
+      {thumb && !failed ? (
+        <Image
+          imageUrl={thumb}
+          resizable={true}
+          scaleToFill={true}
+          frame={{ width: 44, height: 44 }}
+          clipShape="capsule"
+          onError={() => setFailed(true)}
+          placeholder={<Image systemName="person.circle.fill" font="largeTitle" tint="accentColor" frame={{ width: 44, height: 44 }} />}
+        />
+      ) : (
+        <Image systemName="person.circle.fill" font="largeTitle" tint="accentColor" frame={{ width: 44, height: 44 }} />
+      )}
+      <VStack alignment="leading" spacing={2}>
+        <Text font="headline" lineLimit={1}>{artist}</Text>
+        <Text font="subheadline" foregroundStyle="secondaryLabel">{count} 首歌曲</Text>
+      </VStack>
+    </HStack>
+  )
+}
+
+/** 详情页 banner 渐变暗角（顶部轻、底部深，保白字/chips 可读）。与播放页 SCRIM 同式。 */
+const BANNER_SCRIM = {
+  colors: ["rgba(0,0,0,0.12)", "rgba(0,0,0,0.34)", "rgba(0,0,0,0.78)"],
+  startPoint: "top",
+  endPoint: "bottom",
+} as any
+
+/** 详情页顶部 header：艺人大图 + 信息 chips + 可展开简介。信息全缺失时不渲染。 */
+function ArtistHeader({ artist }: { artist: string }) {
+  const [info, setInfo] = useState<ArtistInfo | null>(null)
+  const [bannerFailed, setBannerFailed] = useState(false)
+  const [thumbFailed, setThumbFailed] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    artistInfo.fetch(artist).then(i => { if (alive) setInfo(i) }).catch(() => { })
+    return () => { alive = false }
+  }, [artist])
+
+  const hasContent = !!info && (!!(info.thumb && !thumbFailed) || !!info.biography || !!info.genre || !!info.country || !!info.formedYear)
+  const hasThumb = !!info?.thumb && !thumbFailed
+  const hasBanner = !!info?.fanart && !bannerFailed
+
+  // 首帧/加载中/查无/信息全缺失 → 渲染空 Section（不能返回裸 null，否则 List 子节点报错）。
+  if (!info || !hasContent) {
+    return <Section listRowInsets={0} listRowSeparator="hidden" />
+  }
+
+  // 结构化 chips：地区 / 成立年(或出生年) / 流派
+  const chips: { icon: string, text: string }[] = []
+  if (info.country) chips.push({ icon: "mappin.and.ellipse", text: info.country })
+  if (info.formedYear) chips.push({ icon: "calendar", text: `成立 ${info.formedYear}` })
+  else if (info.bornYear) chips.push({ icon: "calendar", text: info.bornYear })
+  if (info.genre) chips.push({ icon: "guitars", text: info.genre })
+
+  const avatar = hasThumb ? (
+    <Image
+      imageUrl={info.thumb!}
+      resizable={true}
+      scaleToFill={true}
+      frame={{ width: 96, height: 96 }}
+      clipShape="capsule"
+      shadow={{ color: "rgba(0,0,0,0.3)", radius: 8, x: 0, y: 4 }}
+      onError={() => setThumbFailed(true)}
+      placeholder={<Image systemName="person.circle.fill" font={{ name: "system", size: 96 }} tint="white" frame={{ width: 96, height: 96 }} />}
+    />
+  ) : (
+    <Image systemName="person.circle.fill" font={{ name: "system", size: 88 }} foregroundStyle={hasBanner ? "white" : "accentColor"} frame={{ width: 96, height: 96 }} />
+  )
+
+  const foreground = (
+    <VStack spacing={10} padding={{ vertical: 18, horizontal: 16 }} frame={{ maxWidth: "infinity" }}>
+      {avatar}
+      <Text font="title2" fontWeight="bold" foregroundStyle={hasBanner ? "white" : "label"} lineLimit={2} multilineTextAlignment="center">{info.name}</Text>
+      {chips.length > 0 && (
+        <HStack spacing={8}>
+          {chips.map((c, i) => (
+            <HStack key={i} spacing={4} padding={{ horizontal: 10, vertical: 5 }} background={hasBanner ? "rgba(255,255,255,0.18)" : "secondarySystemBackground"} clipShape="capsule">
+              <Image systemName={c.icon} font="caption2" foregroundStyle={hasBanner ? "white" : "secondaryLabel"} />
+              <Text font="caption" fontWeight="medium" foregroundStyle={hasBanner ? "white" : "secondaryLabel"} lineLimit={1}>{c.text}</Text>
+            </HStack>
+          ))}
+        </HStack>
+      )}
+    </VStack>
+  )
+
+  return (
+    <Section listRowInsets={0} listRowSeparator="hidden">
+      <VStack spacing={0} frame={{ maxWidth: "infinity" }}>
+        {hasBanner ? (
+          <ZStack frame={{ maxWidth: "infinity" }}>
+            <Image
+              imageUrl={info.fanart!}
+              resizable={true}
+              scaleToFill={true}
+              frame={{ maxWidth: "infinity", height: 240 }}
+              clipped={true}
+              onError={() => setBannerFailed(true)}
+              blur={2}
+            />
+            <Rectangle
+              frame={{ maxWidth: "infinity", height: 240 }}
+              fill={BANNER_SCRIM}
+            />
+            {foreground}
+          </ZStack>
+        ) : (
+          foreground
+        )}
+
+        {info.biography && (
+          <Button action={() => setExpanded(e => !e)} buttonStyle="plain">
+            <VStack alignment="leading" spacing={6} padding={{ horizontal: 16, top: 14, bottom: 16 }} frame={{ maxWidth: "infinity" }} contentShape="rect">
+              <Text font="body" foregroundStyle="secondaryLabel" lineLimit={expanded ? undefined : 3}>{info.biography}</Text>
+              <HStack spacing={3}>
+                <Text font="caption" fontWeight="semibold" foregroundStyle="systemPink">{expanded ? "收起" : "展开"}</Text>
+                <Image systemName={expanded ? "chevron.up" : "chevron.down"} font="caption2" foregroundStyle="systemPink" />
+              </HStack>
+            </VStack>
+          </Button>
+        )}
+      </VStack>
+    </Section>
   )
 }
