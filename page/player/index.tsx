@@ -29,13 +29,13 @@ function PlayerPage() {
         ignoresSafeArea={true}
       />
 
-      {/* 根 VStack 显式钉在屏幕宽度内。
-          重要：sheet 会向内容提出「无限宽」布局，`maxWidth:"infinity"` 并不会把 VStack 钉在屏宽，
-          于是长歌词行的 ideal 单行宽会把整列撑宽、左右对称被裁。用显式 `width: 屏宽` 才能钉住。 */}
+      {/* 根 VStack 显式钉在「屏宽 - 左右24*2」的宽度，在 ZStack 里居中 → 自动左右各 24pt 边距。
+          （不用 padding：sheet 提无限宽时 frame+padding 的 modifier 顺序会让 padding 加在外侧被裁，
+          直接收窄 width 最可靠，标题/进度条不再贴容器边缘。） */}
       <VStack
         spacing={0}
-        frame={{ width: Device.screen.width }}
-        modifiers={modifiers().padding({ leading: 24, trailing: 24, top: 8 })}
+        frame={{ width: Device.screen.width - 48 }}
+        modifiers={modifiers().padding({ top: 8 })}
       >
         <Capsule
           fill={"rgba(255,255,255,0.5)"}
