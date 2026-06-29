@@ -90,9 +90,15 @@ export const artistInfo = new ArtistInfoSource()
 - 真机：列表头像加载/详情 banner/简介展开/降级（冷门艺人）待用户 App 内确认。
 
 ## 7. Change Log
-- （待实现后回填）
+- 2026-06-30 `b9e459bb`：实现完成。
+  - 新增 `class/sources/artist_info.ts`：TheAudioDB `search.php` 拉取，内存缓存 `Map<name, ArtistInfo|null>` + inflight 去重，名称护栏（规整后相等/互包含），8s 超时；查无/护栏不过缓存 null，网络失败不缓存（可重试）。bio 取 `strBiographyCN || strBiography`。
+  - `page/library/artists.tsx`：列表行抽 `ArtistRowContent`（圆形 44pt 真实头像懒加载，onError/查无降级 person.circle.fill）；详情页新增 `ArtistHeader`（fanart 模糊 banner + 96pt 圆头像 + 地区/成立年/流派 chips + 可展开简介）插在「播放全部/随机」Section 之前，歌曲列表与全部交互零改动。
+  - 风格统一：chips 用 `clipShape="capsule"`、header title3/bold、展开链接 systemPink，与资料库/发现页一致。
 
-## 8. Open Questions（待用户拍板）
-- Q1：列表行头像是否需要**落盘缓存**（离线可见 / 省流）？默认否（仅内存元数据缓存 + Image HTTP 缓存）。
-- Q2：详情页是否要 fanart 模糊大 banner？还是简洁居中圆头像即可？默认「有 fanart 用 banner，无则圆头像」。
-- Q3：简介只有英文时是否接受（华语用户）？默认接受（CN 优先，无则 EN 原文）。
+### 实现中踩的坑
+- **clipShape 不支持 `{type:"circle"}`**（仅 `rect`/`capsule`/`concentricRect`）→ 正方形 frame 上用 `clipShape="capsule"` 即圆。
+- **Rectangle 渐变 fill 不要包 `gradient` 层**→ 直接 `{colors,startPoint:"top",endPoint:"bottom"} as any`（对齐 player/cover.tsx 的 SCRIM）。
+- **函数组件作为 List 直接子节点首帧 `return null` 会报 `e.isInternal`**→ 改为返回空 `<Section/>` 而非裸 null。
+
+## 8. Open Questions（已拍板）
+- 用户同意全部默认：Q1 不落盘缓存（仅内存元数据）、Q2 有 fanart 用 banner 无则圆头像、Q3 简介 CN 优先无则英文。
