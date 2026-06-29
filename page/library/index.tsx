@@ -1,7 +1,7 @@
 import {
   Button, ContentUnavailableView, HStack, Image, Label, List, Menu,
   NavigationLink, ProgressView, ScrollView, Section, Spacer, Toolbar,
-  ToolbarItem, useEffect, useState,
+  ToolbarItem, useEffect, useObservable, useState,
 } from "scripting"
 import { database, Music } from "../../class/database"
 import { player } from "../../class/player"
@@ -16,7 +16,7 @@ import { PlaylistsView } from "./playlists"
 import { RecentlyPlayedView, TopPlayedView } from "./smart_playlists"
 import {
   LibrarySectionHeader, QuickEntryGrid, QuickEntry,
-  RecentlyAddedCard, FavoriteSongRow, StorageFooter,
+  RecentlyAddedCard, FavoriteSongRow,
 } from "./components"
 
 const RECENT_LIMIT = 12
@@ -34,7 +34,6 @@ type LibraryData = {
   playlistCount: number
   artistCount: number
   albumCount: number
-  storageBytes: number
   coverExists: Record<string, boolean>
 }
 
@@ -46,18 +45,26 @@ export function LibraryView() {
   const [loading, setLoading] = useState(true)
   const playerState = usePlayerState()
 
+  // 编程式导航：LazyVGrid 嵌在 List row 里多个 NavigationLink 会命中区串扰，
+  // 改用 Button + navigationDestination(Observable 控制 push) 避免冲突。
+  const navPresented = useObservable(false)
+  const [navTarget, setNavTarget] = useState<JSX.Element | null>(null)
+  const onSelectEntry = (entry: QuickEntry) => {
+    setNavTarget(entry.destination)
+    navPresented.setValue(true)
+  }
+
   useEffect(() => { load() }, [])
 
   async function load() {
     setLoading(true)
     try {
-      const [all, favorites, playlists, artists, albums, storageBytes] = await Promise.all([
+      const [all, favorites, playlists, artists, albums] = await Promise.all([
         database.getAllMusic().catch(() => [] as Music[]),
         database.getFavoriteMusic().catch(() => [] as Music[]),
         database.getAllPlaylists().catch(() => [] as any[]),
         database.getMusicByArtist().catch(() => [] as any[]),
         database.getMusicByAlbum().catch(() => [] as any[]),
-        fileManager.getStorageSize().catch(() => 0),
       ])
 
       // 最近添加 = getAllMusic 已按 added_at DESC，取前 N
@@ -94,7 +101,7 @@ export function LibraryView() {
         playlistCount: playlists.length,
         artistCount: artists.length,
         albumCount: albums.length,
-        storageBytes, coverExists,
+        coverExists,
       })
     } catch (e) {
       console.error("[资料库] 加载失败:", e)
@@ -152,10 +159,16 @@ export function LibraryView() {
   const hasContent = (data?.all.length ?? 0) > 0
 
   return (
-    <List toolbar={toolbarEl}>
+    <List
+      toolbar={toolbarEl}
+      navigationDestination={navTarget != null ? {
+        isPresented: navPresented,
+        content: navTarget,
+      } : undefined}
+    >
       {/* A — 快捷入口宫格 */}
       <Section listRowInsets={{ horizontal: 16, vertical: 6 } as any} listRowSeparator="hidden">
-        <QuickEntryGrid entries={quickEntries} />
+        <QuickEntryGrid entries={quickEntries} onSelect={onSelectEntry} />
       </Section>
 
       {/* B — 最近添加 */}
@@ -231,13 +244,6 @@ export function LibraryView() {
           systemImage="music.note.list"
           description="去「搜索」或「发现」添加歌曲，它们会出现在这里"
         />
-      )}
-
-      {/* E — 存储信息 */}
-      {data && data.downloadedCount > 0 && (
-        <Section listRowSeparator="hidden">
-          <StorageFooter downloadedCount={data.downloadedCount} bytes={data.storageBytes} />
-        </Section>
       )}
     </List>
   )

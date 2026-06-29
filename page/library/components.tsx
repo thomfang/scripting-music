@@ -61,9 +61,9 @@ export type QuickEntry = {
   destination: JSX.Element
 }
 
-function QuickEntryCard({ entry }: { entry: QuickEntry }) {
+function QuickEntryCard({ entry, onSelect }: { entry: QuickEntry; onSelect: (entry: QuickEntry) => void }) {
   return (
-    <NavigationLink destination={entry.destination}>
+    <Button action={() => onSelect(entry)} buttonStyle="plain">
       <HStack
         spacing={10}
         padding={{ horizontal: 12, vertical: 13 }}
@@ -89,12 +89,13 @@ function QuickEntryCard({ entry }: { entry: QuickEntry }) {
           )}
         </VStack>
         <Spacer minLength={0} />
+        <Image systemName="chevron.right" font="caption2" foregroundStyle="tertiaryLabel" />
       </HStack>
-    </NavigationLink>
+    </Button>
   )
 }
 
-export function QuickEntryGrid({ entries }: { entries: QuickEntry[] }) {
+export function QuickEntryGrid({ entries, onSelect }: { entries: QuickEntry[]; onSelect: (entry: QuickEntry) => void }) {
   return (
     <LazyVGrid
       columns={[
@@ -103,7 +104,7 @@ export function QuickEntryGrid({ entries }: { entries: QuickEntry[] }) {
       ]}
       spacing={10}
     >
-      {entries.map(e => <QuickEntryCard key={e.key} entry={e} />)}
+      {entries.map(e => <QuickEntryCard key={e.key} entry={e} onSelect={onSelect} />)}
     </LazyVGrid>
   )
 }
@@ -253,22 +254,6 @@ export function FavoriteSongRow({ music, rank, coverExists, isPlaying, showPlayC
       ) : (
         <Image systemName="heart.fill" font="footnote" foregroundStyle="systemPink" />
       )}
-    </HStack>
-  )
-}
-
-// ---- 底部存储信息 ----
-
-export function StorageFooter({ downloadedCount, bytes }: { downloadedCount: number; bytes: number }) {
-  const mb = bytes > 0 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : "0 MB"
-  return (
-    <HStack spacing={5} padding={{ vertical: 6 }}>
-      <Spacer />
-      <Image systemName="internaldrive" font="caption2" foregroundStyle="tertiaryLabel" />
-      <Text font="caption" foregroundStyle="tertiaryLabel">
-        {`已下载 ${downloadedCount} 首 · 占用 ${mb}`}
-      </Text>
-      <Spacer />
     </HStack>
   )
 }
