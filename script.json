@@ -1,0 +1,43 @@
+{
+  "iconImage" : null,
+  "icon" : "music.note",
+  "runInApp" : false,
+  "description" : null,
+  "localizedDescriptions" : {
+    "es" : "",
+    "zh" : "",
+    "ru" : "",
+    "fr" : "",
+    "en" : "",
+    "de" : "",
+    "pt" : "",
+    "ja" : "",
+    "it" : ""
+  },
+  "intentInputTypes" : [
+
+  ],
+  "name" : "Scripting Music",
+  "author" : {
+    "name" : "001",
+    "email" : null,
+    "homepage" : "https:\/\/github.com\/001ProMax"
+  },
+  "color" : "rgba(255, 48, 0, 1.00)",
+  "version" : "1.0.0",
+  "localizedNames" : {
+    "ru" : "",
+    "it" : "",
+    "en" : "",
+    "es" : "",
+    "de" : "",
+    "pt" : "",
+    "zh" : "",
+    "ja" : "",
+    "fr" : ""
+  },
+  "contributors" : [
+
+  ],
+  "remoteResource" : null
+}

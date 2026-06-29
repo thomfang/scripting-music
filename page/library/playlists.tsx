@@ -1,0 +1,429 @@
+import {
+  Button, ForEach, HStack, Image, Label, List, Menu, Navigation, NavigationLink,
+  Section, Text, Toolbar, ToolbarItem, VStack,
+  useEffect, useMemo, useObservable, useState
+} from "scripting"
+import { database, Music, Playlist } from "../../class/database"
+import { player } from "../../class/player"
+import { usePlayerState } from "../../class/player_state"
+import { fileManager } from "../../class/file_manager"
+import { PlaylistPickerContent } from "../components/playlist_picker"
+import { SongRow } from "../components/song_row"
+import { BatchDownloadProgressSection } from "../components/batch_download_progress"
+import { playlistShare } from "../../class/playlist_share"
+import { safeRun } from "../../class/safe_run"
+import { BatchDownloadProgress, confirmBatchDownload, getBatchDownloadCandidates, hasBatchDownloadCandidates, loadAudioExistsMap, runBatchDownload, toDownloadMusicInfo } from "../../class/batch_download_helper"
+import { downloadManager } from "../../class/download_manager"
+
+export function PlaylistsView() {
+  const playlists = useObservable<Playlist[]>([])
+  const [showImportPicker, setShowImportPicker] = useState(false)
+  const [pendingImportFile, setPendingImportFile] = useState<string | null>(null)
+
+  async function loadPlaylists() {
+    await safeRun(async () => {
+      playlists.setValue(await database.getAllPlaylists())
+    }, { tag: "playlists.load" })
+  }
+
+  async function createPlaylist() {
+    const name = await Dialog.prompt({ title: "新建播放列表", placeholder: "播放列表名称" })
+    if (!name) return
+    await safeRun(async () => {
+      await database.createPlaylist(name)
+      await loadPlaylists()
+    }, { title: "新建失败", tag: "playlists.create" })
+  }
+
+  async function importPlaylist() {
+    await safeRun(async () => {
+      const files = await DocumentPicker.pickFiles({
+        allowsMultipleSelection: false,
+      })
+      if (!files || files.length === 0) return
+      const filePath = files[0]
+
+      // 弹出选择对话框：新建 or 合并
+      // 0 = 新建歌单，1 = 合并到已有歌单，null = 取消
+      const choice = await Dialog.actionSheet({
+        title: "导入歌单",
+        message: "选择导入方式",
+        actions: [
+          { label: "新建歌单" },
+          { label: "合并到已有歌单" },
+        ],
+      })
+
+      if (choice == null) {
+        DocumentPicker.stopAcessingSecurityScopedResources()
+        return
+      }
+
+      if (choice === 1) {
+        // 先刷新歌单列表，然后显示 picker
+        await loadPlaylists()
+        if (playlists.value.length === 0) {
+          DocumentPicker.stopAcessingSecurityScopedResources()
+          await Dialog.alert({ title: "暂无歌单", message: "请先创建一个歌单后再选择合并" })
+          return
+        }
+        setPendingImportFile(filePath)
+        setShowImportPicker(true)
+        return
+      }
+
+      // 新建歌单
+      const stats = await playlistShare.importFromFile(filePath)
+      DocumentPicker.stopAcessingSecurityScopedResources()
+      await loadPlaylists()
+      await Dialog.alert({
+        title: "导入完成",
+        message: `歌单：${stats.playlistName}\n共 ${stats.total} 首\n新增歌曲：${stats.newMusics}\n已存在：${stats.existedMusics}\n加入歌单：${stats.addedToPlaylist}\n已在歌单：${stats.alreadyInPlaylist}`
+      })
+    }, { title: "导入失败", tag: "playlists.import" })
+  }
+
+  async function handleMergeSelect(targetPlaylistId: string) {
+    setShowImportPicker(false)
+    const filePath = pendingImportFile
+    setPendingImportFile(null)
+    if (!filePath) return
+
+    await safeRun(async () => {
+      const stats = await playlistShare.importFromFile(filePath, { mergeIntoPlaylistId: targetPlaylistId })
+      DocumentPicker.stopAcessingSecurityScopedResources()
+      await loadPlaylists()
+      await Dialog.alert({
+        title: "导入完成",
+        message: `已合并到：${stats.playlistName}\n共 ${stats.total} 首\n新增歌曲：${stats.newMusics}\n已存在：${stats.existedMusics}\n加入歌单：${stats.addedToPlaylist}\n已在歌单：${stats.alreadyInPlaylist}`
+      })
+    }, { title: "合并失败", tag: "playlists.merge" })
+  }
+
+  function handleImportPickerDismiss() {
+    setShowImportPicker(false)
+    setPendingImportFile(null)
+    DocumentPicker.stopAcessingSecurityScopedResources()
+  }
+
+  useEffect(() => { loadPlaylists() }, [])
+
+  return (
+    <List
+      navigationTitle="播放列表"
+      sheet={{
+        isPresented: showImportPicker,
+        onChanged: (v: boolean) => { if (!v) handleImportPickerDismiss() },
+        content: <PlaylistPickerContent onSelect={handleMergeSelect} onDismiss={handleImportPickerDismiss} />
+      }}
+    >
+      <Button action={createPlaylist}>
+        <HStack spacing={12}>
+          <Image systemName="plus.circle.fill" font="title2" tint="accentColor" frame={{ width: 50, height: 50 }} />
+          <Text font="headline">新建播放列表</Text>
+        </HStack>
+      </Button>
+      <Button action={importPlaylist}>
+        <HStack spacing={12}>
+          <Image systemName="square.and.arrow.down" font="title2" tint="accentColor" frame={{ width: 50, height: 50 }} />
+          <VStack alignment="leading" spacing={2}>
+            <Text font="headline">导入歌单</Text>
+            <Text font="caption" foregroundStyle="secondaryLabel">从 .smpl.json 文件导入</Text>
+          </VStack>
+        </HStack>
+      </Button>
+      {playlists.value.map(playlist => (
+        <NavigationLink key={playlist.id} destination={<PlaylistDetail playlistId={playlist.id} onDeleted={loadPlaylists} />}>
+          <HStack spacing={12}>
+            <Image systemName="music.note.list" font="title2" tint="accentColor" frame={{ width: 50, height: 50 }} />
+            <VStack alignment="leading" spacing={2}>
+              <Text font="headline">{playlist.name}</Text>
+              <Text font="subheadline" foregroundStyle="secondaryLabel">{playlist.music_count} 首歌曲</Text>
+            </VStack>
+          </HStack>
+        </NavigationLink>
+      ))}
+    </List>
+  )
+}
+
+function PlaylistDetail({ playlistId, onDeleted }: { playlistId: string, onDeleted: () => void }) {
+  const dismiss = Navigation.useDismiss()
+  const playlist = useObservable<Playlist | null>(null)
+  const [musics, setMusics] = useState<Music[]>([])
+  const [coverExists, setCoverExists] = useState<Record<string, boolean>>({})
+  const [audioExists, setAudioExists] = useState<Record<string, boolean>>({})
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set())
+  const [batchDownload, setBatchDownload] = useState<BatchDownloadProgress | null>(null)
+  const [showPlaylistPicker, setShowPlaylistPicker] = useState(false)
+    const [selectedMusic, setSelectedMusic] = useState<Music | null>(null)
+    const selected = useObservable<string[]>([])
+  const editMode = useObservable<EditMode>(() => EditMode.inactive())
+  const state = usePlayerState()
+    const [searchText, setSearchText] = useState("")
+
+    const isEditing = editMode.value.isEditing
+    const filtered = searchText ? musics.filter(m => m.title.toLowerCase().includes(searchText.toLowerCase()) || m.artist.toLowerCase().includes(searchText.toLowerCase())) : musics
+    const filteredItems = useObservable<{ id: string }[]>([])
+    useEffect(() => { filteredItems.setValue(filtered.map(m => ({ id: m.id }))) }, [searchText, musics])
+    const allIds = filtered.map(m => m.id)
+    const selectedSet = useMemo(() => new Set(selected.value), [selected.value])
+    const musicById = useMemo(() => new Map(filtered.map(m => [m.id, m])), [searchText, musics])
+  const hasSelection = selected.value.length > 0
+  const hasDownloadCandidates = hasBatchDownloadCandidates(musics, audioExists)
+  const isAllSelected = allIds.length > 0 && allIds.every(id => selectedSet.has(id))
+
+  async function load() {
+    await safeRun(async () => {
+      const p = await database.getPlaylist(playlistId)
+      playlist.setValue(p)
+      const m = await database.getPlaylistMusic(playlistId)
+      setMusics(m)
+      const [coverMap, audioMap] = await Promise.all([
+        (async () => {
+          const exists: Record<string, boolean> = {}
+          await Promise.all(m.map(async music => { exists[music.id] = await fileManager.coverExists(music.id) }))
+          return exists
+        })(),
+        loadAudioExistsMap(m),
+      ])
+      setCoverExists(coverMap)
+      setAudioExists(audioMap)
+    }, { tag: "playlist.detail.load" })
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function deletePlaylist() {
+    const confirmed = await Dialog.confirm({ title: "删除播放列表", message: "确定要删除这个播放列表吗？" })
+    if (!confirmed) return
+    await safeRun(async () => {
+      await database.deletePlaylist(playlistId)
+      onDeleted()
+      dismiss()
+    }, { title: "删除失败", tag: "playlist.delete" })
+  }
+
+  async function shareViaSheet() {
+    if (!playlist.value) return
+    if (musics.length === 0) {
+      await Dialog.alert({ title: "无法分享", message: "歌单为空" })
+      return
+    }
+    await safeRun(async () => {
+      const { fileUrl } = await playlistShare.exportToTempFile(playlistId)
+      // ShareSheet 的 ActivityItem 类型标注为 string | UIImage，
+      // 但底层 UIActivityViewController 会尝试把 "file://..." 识别成文件 URL。
+      // 若系统把它当文本处理，用户可从菜单选"保存到文件…"降级。
+      await ShareSheet.present([fileUrl])
+    }, { title: "分享失败", tag: "playlist.shareSheet" })
+  }
+
+  async function saveToFiles() {
+    if (!playlist.value) return
+    if (musics.length === 0) {
+      await Dialog.alert({ title: "无法保存", message: "歌单为空" })
+      return
+    }
+    await safeRun(async () => {
+      const { content, filename } = await playlistShare.serializePlaylist(playlistId)
+      const data = Data.fromRawString(content)
+      if (!data) throw new Error("序列化失败")
+      await DocumentPicker.exportFiles({
+        files: [{ data, name: filename }]
+      })
+    }, { title: "保存失败", tag: "playlist.saveToFiles" })
+  }
+
+  async function removeFromPlaylist(musicId: string) {
+    await safeRun(async () => {
+      await database.removeMusicFromPlaylist(playlistId, musicId)
+      await load()
+    }, { title: "移除失败", tag: "playlist.remove" })
+  }
+
+  function exitEditing() {
+    editMode.setValue(EditMode.inactive())
+    selected.setValue([])
+  }
+
+  async function batchRemove() {
+    await safeRun(async () => {
+      await Promise.all(selected.value.map(id => database.removeMusicFromPlaylist(playlistId, id)))
+      await load()
+      exitEditing()
+    }, { title: "批量移除失败", tag: "playlist.batchRemove" })
+  }
+
+  async function addToPlaylist(targetPlaylistId: string) {
+    const rawIds = selected.value.length > 0 ? selected.value : selectedMusic ? [selectedMusic.id] : []
+    const validIds = rawIds.filter(id => musics.some((m: Music) => m.id === id))
+    if (rawIds.length > 0 && validIds.length === 0) {
+      await Dialog.alert({ title: "未选中歌曲", message: "请重新选择要添加的歌曲" })
+      return
+    }
+    await safeRun(async () => {
+      await Promise.all(validIds.map(id => database.addMusicToPlaylist(targetPlaylistId, id)))
+      setShowPlaylistPicker(false)
+      setSelectedMusic(null)
+      if (selected.value.length > 0) exitEditing()
+    }, { title: "添加到播放列表失败", tag: "playlist.addTo" })
+  }
+
+  async function downloadOne(music: Music) {
+    if (downloadingIds.has(music.id)) return
+    setDownloadingIds(prev => { const next = new Set(prev); next.add(music.id); return next })
+    await safeRun(async () => {
+      await downloadManager.downloadMusic(toDownloadMusicInfo(music))
+    }, { title: "下载失败", tag: "playlist.download" })
+    setDownloadingIds(prev => { const next = new Set(prev); next.delete(music.id); return next })
+    await load()
+  }
+
+  async function handleDownloadAll() {
+    if (batchDownload) return
+    const candidates = await getBatchDownloadCandidates(musics)
+    const confirmed = await confirmBatchDownload(candidates.length)
+    if (!confirmed) return
+
+    setBatchDownload({ done: 0, total: candidates.length, ok: 0, failed: 0, skipped: 0, currentTitles: [] })
+    await safeRun(async () => {
+      const result = await runBatchDownload(candidates, {
+        concurrency: 3,
+        onItemStart: (info: any) => {
+          setDownloadingIds(prev => { const next = new Set(prev); next.add(info.id); return next })
+          setBatchDownload((prev: BatchDownloadProgress | null) => prev ? {
+            ...prev,
+            currentTitles: Array.from(new Set([...(prev.currentTitles ?? []), info.title])),
+          } : prev)
+        },
+        onProgress: (done: number, total: number, last: any) => {
+          setDownloadingIds(prev => { const next = new Set(prev); next.delete(last.info.id); return next })
+          setBatchDownload((prev: BatchDownloadProgress | null) => prev ? {
+            done,
+            total,
+            ok: prev.ok + (last.ok && !last.skipped ? 1 : 0),
+            skipped: prev.skipped + (last.skipped ? 1 : 0),
+            failed: prev.failed + (!last.ok ? 1 : 0),
+            currentTitles: (prev.currentTitles ?? []).filter(title => title !== last.info.title),
+          } : prev)
+        },
+      })
+      await load()
+      setBatchDownload(null)
+      await Dialog.alert({
+        title: "下载完成",
+        message: `成功 ${result.ok} 首，已跳过 ${result.skipped} 首，失败 ${result.failed} 首。`,
+      })
+    }, { title: "批量下载失败", tag: "playlist.downloadAll" })
+    setBatchDownload(null)
+  }
+
+  if (!playlist.value) return <Text>加载中...</Text>
+
+  return (
+    <List
+          navigationTitle={playlist.value.name}
+          searchable={{ value: searchText, onChanged: setSearchText }}
+          navigationBarBackButtonHidden={isEditing}
+      environments={{ editMode }}
+      selection={selected}
+      sheet={{
+        isPresented: showPlaylistPicker,
+        onChanged: (v: boolean) => { if (!v) { setShowPlaylistPicker(false); setSelectedMusic(null) } },
+        content: <PlaylistPickerContent onSelect={addToPlaylist} onDismiss={() => { setShowPlaylistPicker(false); setSelectedMusic(null) }} />
+      }}
+      safeAreaInset={{
+        bottom: isEditing ? {
+          spacing: 0,
+          content: (
+            <HStack padding={{ horizontal: 16, vertical: 12 }} spacing={12}>
+              <Button action={() => setShowPlaylistPicker(true)} disabled={!hasSelection} frame={{ maxWidth: "infinity" }} padding={{ horizontal: 16, vertical: 10 }} glassEffect={UIGlass.regular()}>
+                <Label title="添加到播放列表" systemImage="music.note.list" />
+              </Button>
+              <Button role="destructive" action={batchRemove} disabled={!hasSelection} frame={{ maxWidth: "infinity" }} padding={{ horizontal: 16, vertical: 10 }} glassEffect={UIGlass.regular()}>
+                <Label title="移除" systemImage="minus.circle" />
+              </Button>
+            </HStack>
+          )
+        } : undefined
+      }}
+      toolbar={
+        <Toolbar>
+          {isEditing && (
+            <ToolbarItem placement="topBarLeading">
+              <Button title={isAllSelected ? "反选" : "全选"} action={() => selected.setValue(isAllSelected ? [] : allIds)} />
+            </ToolbarItem>
+          )}
+          <ToolbarItem placement="topBarTrailing">
+            <HStack spacing={12}>
+              {!isEditing && (
+                <Menu label={<Image systemName="ellipsis" />}>
+                  <Button title="分享…" systemImage="square.and.arrow.up" action={shareViaSheet} />
+                  <Button title="保存到文件…" systemImage="folder" action={saveToFiles} />
+                  {hasDownloadCandidates && (
+                    <Button title="下载全部" systemImage="arrow.down.circle" action={handleDownloadAll} disabled={batchDownload !== null} />
+                  )}
+                  <Button title="删除播放列表" role="destructive" action={deletePlaylist} />
+                </Menu>
+              )}
+              <Button title={isEditing ? "完成" : "编辑"} action={() => editMode.setValue(isEditing ? EditMode.inactive() : EditMode.active())} />
+            </HStack>
+          </ToolbarItem>
+        </Toolbar>
+      }
+    >
+      <BatchDownloadProgressSection progress={batchDownload} />
+      {!isEditing && musics.length > 0 && (
+        <Section>
+          <Button action={async () => { player.setQueue(filtered, 0); await player.play(filtered[0]) }}>
+                      <Label title="播放全部" systemImage="play.fill" tint="systemPink" />
+                    </Button>
+                    <Button action={async () => { const s = [...filtered].sort(() => Math.random() - 0.5); player.setQueue(s, 0); await player.play(s[0]) }}>
+                      <Label title="随机播放" systemImage="shuffle" tint="systemPink" />
+                    </Button>
+        </Section>
+      )}
+      <Section>
+              <ForEach
+                data={filteredItems}
+                builder={(item) => {
+                  const music = musicById.get(item.id)
+                  if (!music) return <Text>{""}</Text>
+                  return (
+                    <SongRow
+                      itemId={music.id}
+                      music={music}
+                      queue={musics}
+                      coverExists={coverExists}
+                      audioExists={audioExists}
+                      downloadingIds={downloadingIds}
+                      fallbackRemoteCover={true}
+                      isEditing={isEditing}
+                      onToggleFavorite={() => { /* 详情页不直接收藏 */ }}
+                      onDelete={() => removeFromPlaylist(music.id)}
+                      onAddToPlaylist={(m) => { setSelectedMusic(m); setShowPlaylistPicker(true) }}
+                      onDownload={downloadOne}
+                      extraMenuItems={
+                        <Button
+                          title="从歌单移除"
+                          systemImage="minus.circle"
+                          role="destructive"
+                          action={() => removeFromPlaylist(music.id)}
+                        />
+                      }
+                      hideDefaultDelete={true}
+                      leadingSwipe={[]}
+                      trailingSwipe={[
+                        <Button key="rm" role="destructive" action={() => removeFromPlaylist(music.id)}>
+                          <Label title="移除" systemImage="minus.circle" />
+                        </Button>
+                      ]}
+                    />
+                  )
+                }}
+              />
+      </Section>
+    </List>
+  )
+}
