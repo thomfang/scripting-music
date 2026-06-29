@@ -1,28 +1,52 @@
 import { ScrollView, ScrollViewReader, Text, VStack, useEffect, useState, useMemo } from "scripting"
 import { usePlayerState, usePlayerProgress } from "../../class/player_state"
+import { player } from "../../class/player"
 import { lyrics, LyricLine, LyricsResult } from "../../class/sources/lyrics"
 import { fileManager } from "../../class/file_manager"
 
 const DEFAULT_LYRIC_HEIGHT = 150
+// 高亮前导补偿（秒）：让歌词行比音频略早亮一点，抵消渲染/感知延迟。
+const LYRIC_LEAD = 0.2
+// 模块级歌词内存缓存：跨「Lyric 因 key 重挂载」存活，为同一首歌重开播放页时避免闪「加载」、不重复请求。
+const lyricMemCache = new Map<string, LyricsResult>()
 
 export function Lyric({ height = DEFAULT_LYRIC_HEIGHT, onToggle, animation }: { height?: number; onToggle?: () => void; animation?: any }) {
-  const { currentMusic } = usePlayerState()
-  const { currentTime } = usePlayerProgress()
-  const [result, setResult] = useState<LyricsResult | null>(null)
+  const { currentMusic, isPlaying } = usePlayerState()
+  const { currentTime: progressTime } = usePlayerProgress()
+  // 同一首歌重挂载时，用内存缓存同步初始化 → 不闪「加载歌词…」。
+  const [result, setResult] = useState<LyricsResult | null>(
+    () => (currentMusic ? lyricMemCache.get(currentMusic.id) ?? null : null)
+  )
   const [loading, setLoading] = useState(false)
+  // 独立高频计时：进度 Provider 只 1s 一跳，会让歌词高亮最多滞后近 1 秒；
+  // 这里 250ms 轮询 player.getCurrentTime() 取真实播放时间，同步更紧。
+  const [now, setNow] = useState(0)
 
-  // 切歌时拉取歌词
+  // 暂停/seek 时以 Provider 的 currentTime 为准（初始、seek 都会推）
+  useEffect(() => { setNow(progressTime) }, [progressTime])
+  // 播放时高频轮询真实播放时间
+  useEffect(() => {
+    if (!isPlaying) return
+    const id = setInterval(() => setNow(player.getCurrentTime()), 250)
+    return () => clearInterval(id)
+  }, [isPlaying, currentMusic?.id])
+
+  // 切歌时拉取歌词（内存缓存 → 本地 → 在线）
   useEffect(() => {
     let alive = true
-    setResult(null)
-    if (!currentMusic) return
-    setLoading(true)
+    if (!currentMusic) { setResult(null); return }
     const musicId = currentMusic.id
+    // 内存缓存命中：直接用，不走 loading / 不请求
+    const cached = lyricMemCache.get(musicId)
+    if (cached) { setResult(cached); return }
+    setResult(null)
+    setLoading(true)
     ;(async () => {
       try {
         // 本地优先：已下载的歌曲歌词与封面同生命周期存于本地
         const local = await fileManager.readLyrics<LyricsResult>(musicId)
         if (local && (local.synced?.length || local.plain)) {
+          lyricMemCache.set(musicId, local)
           if (alive) setResult(local)
           return
         }
@@ -33,6 +57,7 @@ export function Lyric({ height = DEFAULT_LYRIC_HEIGHT, onToggle, animation }: { 
           album: currentMusic.album,
           duration: currentMusic.duration,
         })
+        lyricMemCache.set(musicId, r)
         if (alive) setResult(r)
       } catch (e) {
         console.error("[歌词] 获取失败:", e)
@@ -44,17 +69,18 @@ export function Lyric({ height = DEFAULT_LYRIC_HEIGHT, onToggle, animation }: { 
     return () => { alive = false }
   }, [currentMusic?.id])
 
-  // 当前高亮行：最后一个 time <= currentTime 的行
+  // 当前高亮行：最后一个 time <= (now + 前导补偿) 的行
   const activeIndex = useMemo(() => {
     const synced = result?.synced
     if (!synced || synced.length === 0) return -1
+    const t = now + LYRIC_LEAD
     let idx = -1
     for (let i = 0; i < synced.length; i++) {
-      if (synced[i].time <= currentTime) idx = i
+      if (synced[i].time <= t) idx = i
       else break
     }
     return idx
-  }, [result?.synced, currentTime])
+  }, [result?.synced, now])
 
   if (!currentMusic) {
     return <LyricTapArea onToggle={onToggle} animation={animation}><Placeholder text="暂无播放" height={height} /></LyricTapArea>
