@@ -2,6 +2,7 @@ import { fetch } from "scripting"
 import type { MusicData, MusicProvider } from "../music"
 import type { MusicSource, ResolveInput } from "./source"
 import { aesCbcDecrypt } from "./aes_cbc"
+import { enrichBatch } from "./itunes_meta"
 
 /**
  * MP3Juice 源适配器（mp3juice3.ninja 搜索 + savetube.vip 下载）。
@@ -69,7 +70,8 @@ class SourceMP3Juice implements MusicSource {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`)
     const data = await resp.json()
     const items = (data?.items ?? []) as any[]
-    return items.map(it => ({
+
+    const base: MusicData[] = items.map(it => ({
       id: String(it.id),
       title: String(it.title ?? ""),
       provider: MP3JUICE_PROVIDER,
@@ -78,6 +80,23 @@ class SourceMP3Juice implements MusicSource {
       album: "",
       duration: parseDuration(it.duration),
     } as MusicData))
+
+    // iTunes 元数据富化：补 artist/album/高清封面/时长（置信度护栏，失败不阻断）
+    try {
+      const metas = await enrichBatch(base, m => m.title, 4)
+      base.forEach((m, i) => {
+        const meta = metas[i]
+        if (!meta?.matched) return
+        if (meta.artist) m.artist = meta.artist
+        if (meta.album) m.album = meta.album
+        if (meta.cover) m.cover = meta.cover
+        if (meta.duration && (!m.duration || m.duration === 0)) m.duration = meta.duration
+      })
+    } catch (e) {
+      console.log(`[mp3juice] iTunes 富化跳过: ${e}`)
+    }
+
+    return base
   }
 
   private async getCdn(): Promise<string> {

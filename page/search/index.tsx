@@ -17,7 +17,7 @@ import {
   Group,
   Label,
 } from "scripting"
-import { MusicData, music, SourceId } from "../../class/music"
+import { MusicData, music } from "../../class/music"
 import { Music, database } from "../../class/database"
 import { player } from "../../class/player"
 import { fileManager } from "../../class/file_manager"
@@ -39,7 +39,6 @@ export function SearchView() {
   const [inputValue, setInputValue] = useState("")
   const [query, setQuery] = useState("")
   const [mode, setMode] = useState<SearchMode>("online")
-  const [source, setSource] = useState<SourceId>("001co")
   const [results, setResults] = useState<MusicData[] | null>(null)
   const [localResults, setLocalResults] = useState<Music[] | null>(null)
   const [localCoverExists, setLocalCoverExists] = useState<Record<string, boolean>>({})
@@ -64,11 +63,6 @@ export function SearchView() {
   useEffect(() => {
     if (query) doSearch(query)
   }, [mode])
-
-  // Re-run online search when source changes
-  useEffect(() => {
-    if (query && mode === "online") doSearch(query)
-  }, [source])
 
   function sortResults(data: MusicData[], type: SortType): MusicData[] {
       const sorted = [...data]
@@ -120,7 +114,7 @@ export function SearchView() {
   }
 
   async function doOnlineSearch(q: string) {
-    const cacheKey = `${source}::${q}`
+    const cacheKey = q
     const cached = searchCache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
       setResults(sortResults(cached.data, sortType))
@@ -131,7 +125,7 @@ export function SearchView() {
     setResults(null)
     setError(null)
     try {
-      const { items } = await music.search(q, source)
+      const { items } = await music.search(q)
       setResults(sortResults(items, sortType))
       searchCache.set(cacheKey, { data: items, timestamp: Date.now() })
     } catch {
@@ -160,7 +154,7 @@ export function SearchView() {
           album: selectedMusic.album || "未知专辑",
           duration: selectedMusic.duration || 0,
           cover_url: (selectedMusic as any).cover ?? (selectedMusic as any).cover_url ?? "",
-          audio_url: "audio_url" in selectedMusic ? selectedMusic.audio_url || "" : (selectedMusic.provider === "mp3juice" ? "" : music.getAudioUrl(selectedMusic.id, selectedMusic.provider as any)),
+          audio_url: "audio_url" in selectedMusic ? selectedMusic.audio_url || "" : "",
           provider: selectedMusic.provider,
           is_downloaded: false,
           added_at: Date.now(),
@@ -245,18 +239,6 @@ export function SearchView() {
           <Text tag="online">在线</Text>
           <Text tag="local">本地</Text>
         </Picker>
-        {mode === "online" ? (
-          <Picker
-            label={<Text>服务源</Text>}
-            value={source}
-            onChanged={(v: string) => setSource(v as SourceId)}
-            pickerStyle="segmented"
-          >
-            {music.listSources().map(s => (
-              <Text key={s.id} tag={s.id}>{s.label}</Text>
-            ))}
-          </Picker>
-        ) : null}
       </Section>
 
       {isSearching ? (

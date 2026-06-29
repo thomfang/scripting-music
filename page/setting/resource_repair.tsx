@@ -200,7 +200,7 @@ export function ResourceRepairView() {
         album: cand.album || m.album,
         duration: cand.duration || m.duration,
         cover_url: cand.cover || m.cover_url,
-        audio_url: musicService.getAudioUrl(cand.id, cand.provider as any),
+        audio_url: "",
         provider: cand.provider,
         source_id: cand.id,
         is_downloaded: m.is_downloaded,
@@ -213,7 +213,7 @@ export function ResourceRepairView() {
         ...x,
         provider: cand.provider,
         source_id: cand.id,
-        audio_url: musicService.getAudioUrl(cand.id, cand.provider as any),
+        audio_url: "",
         cover_url: cand.cover || x.cover_url,
       } : x))
     }, { title: "应用失败", tag: "repair.applyCandidate" })
