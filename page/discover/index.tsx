@@ -3,7 +3,7 @@ import {
   useEffect,
   List,
   Section,
-  ScrollView,
+  FlowLayout,
   HStack,
   VStack,
   ZStack,
@@ -86,9 +86,13 @@ export function DiscoverView() {
     setGenre(g)
   }
 
-  // 行点击：即时试听（preview 直链）
+  // 行点击：把整个栏目设为待播队列，从当前歌开始即时试听
   async function previewPlay(t: ChartTrack) {
-    await player.playNext(trackToPreviewMusic(t))
+    const list = tracks ?? []
+    const queue = list.map(trackToPreviewMusic)
+    const idx = list.findIndex(x => x.id === t.id)
+    player.setQueue(queue, idx >= 0 ? idx : 0)
+    await player.play(queue[idx >= 0 ? idx : 0])
   }
 
   // 用 "歌名 艺人" 搜 mp3juice，取首条真实可下载源
@@ -197,39 +201,32 @@ export function DiscoverView() {
         content: <PlaylistPickerContent onSelect={addToPlaylist} onDismiss={dismissPlaylistPicker} />,
       }}
     >
-      {/* 流派分类 chips — 横向滚动，永不换行 */}
-      <ScrollView
-        axes="horizontal"
-        scrollIndicator="hidden"
-        listRowInsets={0}
-        listRowSeparator="hidden"
-      >
-        <HStack spacing={10} padding={{ horizontal: 16, vertical: 6 }}>
-          {CHART_GENRES.map(g => {
-            const active = g.id === genre.id
-            return (
-              <Button key={g.key} action={() => selectGenre(g)} buttonStyle="plain">
-                <HStack
-                  spacing={5}
-                  padding={{ horizontal: 16, vertical: 9 }}
-                  background={active ? "systemPink" : "secondarySystemBackground"}
-                  clipShape="capsule"
-                  shadow={active ? { color: "rgba(255,45,85,0.35)", radius: 8, x: 0, y: 3 } : undefined}
+      {/* 流派分类 chips — FlowLayout 自动换行 */}
+      <FlowLayout spacing={10}>
+        {CHART_GENRES.map(g => {
+          const active = g.id === genre.id
+          return (
+            <Button key={g.key} action={() => selectGenre(g)} buttonStyle="plain">
+              <HStack
+                spacing={5}
+                padding={{ horizontal: 16, vertical: 9 }}
+                background={active ? "systemPink" : "secondarySystemBackground"}
+                clipShape="capsule"
+                shadow={active ? { color: "rgba(255,45,85,0.35)", radius: 8, x: 0, y: 3 } : undefined}
+              >
+                <Text font={{ name: "system", size: 15 }}>{g.emoji ?? ""}</Text>
+                <Text
+                  font="subheadline"
+                  fontWeight={active ? "bold" : "medium"}
+                  foregroundStyle={active ? "white" : "secondaryLabel"}
                 >
-                  <Text font={{ name: "system", size: 15 }}>{g.emoji ?? ""}</Text>
-                  <Text
-                    font="subheadline"
-                    fontWeight={active ? "bold" : "medium"}
-                    foregroundStyle={active ? "white" : "secondaryLabel"}
-                  >
-                    {g.label}
-                  </Text>
-                </HStack>
-              </Button>
-            )
-          })}
-        </HStack>
-      </ScrollView>
+                  {g.label}
+                </Text>
+              </HStack>
+            </Button>
+          )
+        })}
+      </FlowLayout>
 
       {loading ? (
         <HStack listRowSeparator="hidden">
