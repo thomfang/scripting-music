@@ -3,8 +3,10 @@ import {
   useEffect,
   List,
   Section,
+  ScrollView,
   HStack,
   VStack,
+  ZStack,
   Text,
   Image,
   Button,
@@ -195,26 +197,39 @@ export function DiscoverView() {
         content: <PlaylistPickerContent onSelect={addToPlaylist} onDismiss={dismissPlaylistPicker} />,
       }}
     >
-      {/* 流派分类 chips */}
-      <HStack spacing={8} listRowSeparator="hidden">
-        {CHART_GENRES.map(g => {
-          const active = g.id === genre.id
-          return (
-            <Button key={g.key} action={() => selectGenre(g)} buttonStyle="plain">
-              <Text
-                font="footnote"
-                fontWeight={active ? "semibold" : "regular"}
-                foregroundStyle={active ? "white" : "label"}
-                padding={{ horizontal: 10, vertical: 6 }}
-                background={active ? "systemPink" : "secondarySystemBackground"}
-                clipShape="capsule"
-              >
-                {`${g.emoji ?? ""} ${g.label}`}
-              </Text>
-            </Button>
-          )
-        })}
-      </HStack>
+      {/* 流派分类 chips — 横向滚动，永不换行 */}
+      <ScrollView
+        axes="horizontal"
+        scrollIndicator="hidden"
+        listRowInsets={0}
+        listRowSeparator="hidden"
+      >
+        <HStack spacing={10} padding={{ horizontal: 16, vertical: 6 }}>
+          {CHART_GENRES.map(g => {
+            const active = g.id === genre.id
+            return (
+              <Button key={g.key} action={() => selectGenre(g)} buttonStyle="plain">
+                <HStack
+                  spacing={5}
+                  padding={{ horizontal: 16, vertical: 9 }}
+                  background={active ? "systemPink" : "secondarySystemBackground"}
+                  clipShape="capsule"
+                  shadow={active ? { color: "rgba(255,45,85,0.35)", radius: 8, x: 0, y: 3 } : undefined}
+                >
+                  <Text font={{ name: "system", size: 15 }}>{g.emoji ?? ""}</Text>
+                  <Text
+                    font="subheadline"
+                    fontWeight={active ? "bold" : "medium"}
+                    foregroundStyle={active ? "white" : "secondaryLabel"}
+                  >
+                    {g.label}
+                  </Text>
+                </HStack>
+              </Button>
+            )
+          })}
+        </HStack>
+      </ScrollView>
 
       {loading ? (
         <HStack listRowSeparator="hidden">
@@ -233,7 +248,19 @@ export function DiscoverView() {
       ) : (
         <Section
           header={
-            <Text>{`${genre.emoji ?? ""} ${genre.label}热门 · 美区 · 试听 30s`}</Text>
+            <HStack spacing={6} padding={{ top: 4, bottom: 2 }}>
+              <Text font="title3" fontWeight="bold" foregroundStyle="label">
+                {`${genre.emoji ?? ""} ${genre.label}`}
+              </Text>
+              <Text font="subheadline" fontWeight="semibold" foregroundStyle="secondaryLabel">
+                热门榜
+              </Text>
+              <Spacer />
+              <HStack spacing={3}>
+                <Image systemName="globe" font="caption2" foregroundStyle="tertiaryLabel" />
+                <Text font="caption" foregroundStyle="tertiaryLabel">美区 · 30s 试听</Text>
+              </HStack>
+            </HStack>
           }
         >
           {(tracks ?? []).map((t, idx) => (
@@ -271,9 +298,17 @@ function DiscoverRow({
   onPreview, onFullPlay, onDownload, onAddToPlaylist,
 }: RowProps) {
   const [coverError, setCoverError] = useState(false)
+  // 金/银/铜 + 其余中性
+  const rankColor =
+    index === 1 ? "#D4AF37" :
+    index === 2 ? "#9CA3AF" :
+    index === 3 ? "#B87333" :
+    "tertiaryLabel"
+  const isTop3 = index <= 3
   return (
     <HStack
       spacing={12}
+      padding={{ vertical: 4 }}
       onTapGesture={onPreview}
       contextMenu={{
         menuItems: (
@@ -296,35 +331,42 @@ function DiscoverRow({
         ],
       }}
     >
+      {/* 排名 */}
       <Text
-        font="footnote"
-        foregroundStyle="secondaryLabel"
-        frame={{ width: 22, alignment: "center" }}
+        font={isTop3 ? { name: "system", size: 19 } : "footnote"}
+        fontWeight={isTop3 ? "heavy" : "semibold"}
+        foregroundStyle={rankColor as any}
+        frame={{ width: 26, alignment: "center" }}
       >
         {String(index)}
       </Text>
 
+      {/* 封面 */}
       {track.cover && !coverError ? (
         <Image
           imageUrl={track.cover}
           resizable={true}
           scaleToFill={true}
-          frame={{ width: 52, height: 52 }}
-          clipShape={{ type: "rect", cornerRadius: 8 }}
+          frame={{ width: 56, height: 56 }}
+          clipShape={{ type: "rect", cornerRadius: 10 }}
+          shadow={{ color: "rgba(0,0,0,0.18)", radius: 4, x: 0, y: 2 }}
           onError={() => setCoverError(true)}
-          placeholder={<Image systemName="music.note" frame={{ width: 52, height: 52 }} />}
+          placeholder={<Image systemName="music.note" frame={{ width: 56, height: 56 }} />}
         />
       ) : (
         <Image
           systemName="music.note"
           font="title2"
           tint="secondaryLabel"
-          frame={{ width: 52, height: 52 }}
+          frame={{ width: 56, height: 56 }}
+          background="secondarySystemBackground"
+          clipShape={{ type: "rect", cornerRadius: 10 }}
         />
       )}
 
-      <VStack alignment="leading" spacing={2}>
-        <Text font="headline" lineLimit={1} foregroundStyle={isPlaying ? "accentColor" : undefined}>
+      {/* 标题 + 艺人 */}
+      <VStack alignment="leading" spacing={3}>
+        <Text font="body" fontWeight="semibold" lineLimit={1} foregroundStyle={isPlaying ? "systemPink" : "label"}>
           {track.title}
         </Text>
         <Text font="subheadline" foregroundStyle="secondaryLabel" lineLimit={1}>
@@ -334,8 +376,14 @@ function DiscoverRow({
 
       <Spacer />
 
-      {isPlaying && <Image systemName="waveform" tint="accentColor" />}
-      {isResolving && <ProgressView controlSize="small" />}
+      {/* 状态 */}
+      {isResolving ? (
+        <ProgressView controlSize="small" />
+      ) : isPlaying ? (
+        <Image systemName="waveform" font="body" foregroundStyle="systemPink" />
+      ) : (
+        <Image systemName="play.circle" font="title3" foregroundStyle="tertiaryLabel" />
+      )}
     </HStack>
   )
 }
