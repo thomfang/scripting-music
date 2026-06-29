@@ -61,19 +61,47 @@ export function DiscoverView() {
   const [pendingTrack, setPendingTrack] = useState<ChartTrack | null>(null)
   // 为你推荐（种子艺人热门曲，汇总）
   const [recommend, setRecommend] = useState<ChartTrack[] | null>(null)
+  const [recoFromDownloads, setRecoFromDownloads] = useState(false)
   const playerState = usePlayerState()
 
   useEffect(() => {
     loadGenre(genre)
   }, [genre.id])
 
-  // 首屏加载一次推荐（并发拉种子艺人，失败静默）
+  // 首屏加载一次推荐：优先基于「已下载艺术家」，不足再补默认种子（失败静默）
   useEffect(() => {
     let alive = true
     ;(async () => {
       try {
+        // 1) 从已下载歌曲提取高频艺术家
+        let seeds: { name: string; artistId?: number }[] = []
+        try {
+          const downloaded = await database.getDownloadedMusic()
+          const counter = new Map<string, number>()
+          for (const m of downloaded) {
+            const name = (m.artist || "").trim()
+            if (!name || name === "未知艺术家") continue
+            counter.set(name, (counter.get(name) ?? 0) + 1)
+          }
+          seeds = [...counter.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 4)
+            .map(([name]) => ({ name }))
+          if (alive && seeds.length > 0) setRecoFromDownloads(true)
+        } catch (e) {
+          console.error("[发现] 读已下载艺术家失败:", e)
+        }
+        // 2) 不足时用默认种子补齐（去重）
+        if (seeds.length < 3) {
+          const have = new Set(seeds.map(s => s.name.toLowerCase()))
+          for (const a of SEED_ARTISTS) {
+            if (have.has(a.name.toLowerCase())) continue
+            seeds.push(a)
+            if (seeds.length >= 3) break
+          }
+        }
         const lists = await Promise.all(
-          SEED_ARTISTS.map(a => charts.fetchArtistTop(a, 6, "us").catch(() => []))
+          seeds.map(a => charts.fetchArtistTop(a, 6, "us").catch(() => []))
         )
         if (!alive) return
         // 交错混合各艺人的曲目，避免扎堆
@@ -247,7 +275,7 @@ export function DiscoverView() {
               <Image systemName="sparkles" font="subheadline" foregroundStyle="systemPink" />
               <Text font="title3" fontWeight="bold" foregroundStyle="label">为你推荐</Text>
               <Spacer />
-              <Text font="caption" foregroundStyle="tertiaryLabel">基于你的口味</Text>
+              <Text font="caption" foregroundStyle="tertiaryLabel">{recoFromDownloads ? "基于你下载的艺术家" : "基于你的口味"}</Text>
             </HStack>
           }
         >
