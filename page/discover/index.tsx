@@ -407,7 +407,11 @@ export function DiscoverView() {
                   key={t.id}
                   track={t}
                   isPlaying={playerState.currentMusic?.id === t.id}
+                  isResolving={resolvingId === t.id}
                   onTap={() => recommendPlay(t)}
+                  onFullPlay={() => fullPlay(t)}
+                  onDownload={() => downloadTrack(t)}
+                  onAddToPlaylist={() => openPlaylistPicker(t)}
                 />
               ))}
             </HStack>
@@ -603,13 +607,30 @@ function DiscoverRow({
 type RecCardProps = {
   track: ChartTrack
   isPlaying: boolean
+  isResolving: boolean
   onTap: () => void
+  onFullPlay: () => void
+  onDownload: () => void
+  onAddToPlaylist: () => void
 }
 
-function RecommendCard({ track, isPlaying, onTap }: RecCardProps) {
+function RecommendCard({ track, isPlaying, isResolving, onTap, onFullPlay, onDownload, onAddToPlaylist }: RecCardProps) {
   const [coverError, setCoverError] = useState(false)
   return (
-    <Button action={onTap} buttonStyle="plain">
+    <Button
+      action={onTap}
+      buttonStyle="plain"
+      contextMenu={{
+        menuItems: (
+          <Group>
+            <Button title="试听 30 秒" systemImage="play.circle" action={onTap} />
+            <Button title="完整播放" systemImage="play.fill" action={onFullPlay} />
+            <Button title="下载" systemImage="arrow.down.circle" action={onDownload} />
+            <Button title="添加到播放列表" systemImage="music.note.list" action={onAddToPlaylist} />
+          </Group>
+        ),
+      }}
+    >
       <VStack alignment="leading" spacing={6} frame={{ width: 130 }}>
         <ZStack alignment="bottomTrailing">
           {track.cover && !coverError ? (
@@ -633,13 +654,17 @@ function RecommendCard({ track, isPlaying, onTap }: RecCardProps) {
               clipShape={{ type: "rect", cornerRadius: 14 }}
             />
           )}
-          {/* 播放角标 */}
-          <Image
-            systemName={isPlaying ? "waveform.circle.fill" : "play.circle.fill"}
-            font="title2"
-            foregroundStyle={isPlaying ? "systemPink" : "white"}
-            padding={6}
-          />
+          {/* 播放/解析中角标 */}
+          {isResolving ? (
+            <ProgressView padding={6} />
+          ) : (
+            <Image
+              systemName={isPlaying ? "waveform.circle.fill" : "play.circle.fill"}
+              font="title2"
+              foregroundStyle={isPlaying ? "systemPink" : "white"}
+              padding={6}
+            />
+          )}
         </ZStack>
         <Text font="subheadline" fontWeight="semibold" lineLimit={1} foregroundStyle={isPlaying ? "systemPink" : "label"}>
           {track.title}
