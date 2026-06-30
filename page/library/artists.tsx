@@ -7,10 +7,15 @@ import { fileManager } from "../../class/file_manager"
 import { PlaylistPickerContent } from "../components/playlist_picker"
 import { LoadingState } from "../components/loading_state"
 import { SongRow } from "../components/song_row"
+import { ArtistRow } from "./rows"
 
 type SortType = "title" | "artist" | "added"
 
-export function ArtistDetail({ artist, musics: initialMusics }: { artist: string, musics: Music[] }) {
+/**
+ * 艺人详情页。
+ * @param onClose 传入时（如播放页 sheet 场景，无系统返回键）在 toolbar 左侧显示「关闭」按钮。
+ */
+export function ArtistDetail({ artist, musics: initialMusics, onClose }: { artist: string, musics: Music[], onClose?: () => void }) {
   const state = usePlayerState()
   const [musics, setMusics] = useState<Music[]>(initialMusics)
   const [coverExists, setCoverExists] = useState<Record<string, boolean>>({})
@@ -114,11 +119,15 @@ export function ArtistDetail({ artist, musics: initialMusics }: { artist: string
       }}
       toolbar={
         <Toolbar>
-          {isEditing && (
+          {isEditing ? (
             <ToolbarItem placement="topBarLeading">
               <Button title={isAllSelected ? "反选" : "全选"} action={() => selected.setValue(isAllSelected ? [] : allIds)} />
             </ToolbarItem>
-          )}
+          ) : onClose ? (
+            <ToolbarItem placement="topBarLeading">
+              <Button title="关闭" systemImage="xmark" action={onClose} />
+            </ToolbarItem>
+          ) : null}
           <ToolbarItem placement="topBarTrailing">
             <HStack spacing={12}>
               {!isEditing && (
@@ -195,46 +204,10 @@ export function ArtistsView() {
         <NavigationLink
           key={item.artist}
           destination={<ArtistDetail artist={item.artist} musics={item.musics} />}>
-          <ArtistRowContent artist={item.artist} count={item.count} />
+          <ArtistRow artist={item.artist} count={item.count} />
         </NavigationLink>
       ))}
     </List>
-  )
-}
-
-/** 列表行：圆形真实头像懒加载，查不到/加载失败降级到占位。 */
-function ArtistRowContent({ artist, count }: { artist: string, count: number }) {
-  const [thumb, setThumb] = useState<string | null>(null)
-  const [failed, setFailed] = useState(false)
-
-  useEffect(() => {
-    let alive = true
-    artistInfo.fetch(artist).then(info => {
-      if (alive && info?.thumb) setThumb(info.thumb)
-    }).catch(() => { })
-    return () => { alive = false }
-  }, [artist])
-
-  return (
-    <HStack spacing={12}>
-      {thumb && !failed ? (
-        <Image
-          imageUrl={thumb}
-          resizable={true}
-          scaleToFill={true}
-          frame={{ width: 44, height: 44 }}
-          clipShape="capsule"
-          onError={() => setFailed(true)}
-          placeholder={<Image systemName="person.circle.fill" font="largeTitle" tint="accentColor" frame={{ width: 44, height: 44 }} />}
-        />
-      ) : (
-        <Image systemName="person.circle.fill" font="largeTitle" tint="accentColor" frame={{ width: 44, height: 44 }} />
-      )}
-      <VStack alignment="leading" spacing={2}>
-        <Text font="headline" lineLimit={1}>{artist}</Text>
-        <Text font="subheadline" foregroundStyle="secondaryLabel">{count} 首歌曲</Text>
-      </VStack>
-    </HStack>
   )
 }
 

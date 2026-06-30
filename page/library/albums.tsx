@@ -7,10 +7,15 @@ import { fileManager } from "../../class/file_manager"
 import { PlaylistPickerContent } from "../components/playlist_picker"
 import { LoadingState } from "../components/loading_state"
 import { SongRow } from "../components/song_row"
+import { AlbumRow } from "./rows"
 
 type SortType = "title" | "added"
 
-export function AlbumDetail({ album, artist, musics: initialMusics }: { album: string, artist: string, musics: Music[] }) {
+/**
+ * 专辑详情页。
+ * @param onClose 传入时（如播放页 sheet 场景，无系统返回键）在 toolbar 左侧显示「关闭」按钮。
+ */
+export function AlbumDetail({ album, artist, musics: initialMusics, onClose }: { album: string, artist: string, musics: Music[], onClose?: () => void }) {
   const state = usePlayerState()
   const [musics, setMusics] = useState<Music[]>(initialMusics)
   const [coverExists, setCoverExists] = useState<Record<string, boolean>>({})
@@ -117,11 +122,15 @@ export function AlbumDetail({ album, artist, musics: initialMusics }: { album: s
       }}
       toolbar={
         <Toolbar>
-          {isEditing && (
+          {isEditing ? (
             <ToolbarItem placement="topBarLeading">
               <Button title={isAllSelected ? "反选" : "全选"} action={() => selected.setValue(isAllSelected ? [] : allIds)} />
             </ToolbarItem>
-          )}
+          ) : onClose ? (
+            <ToolbarItem placement="topBarLeading">
+              <Button title="关闭" systemImage="xmark" action={onClose} />
+            </ToolbarItem>
+          ) : null}
           <ToolbarItem placement="topBarTrailing">
             <HStack spacing={12}>
               {!isEditing && (
@@ -202,47 +211,10 @@ export function AlbumsView() {
         <NavigationLink
           key={`${item.album}-${item.artist}`}
           destination={<AlbumDetail album={item.album} artist={item.artist} musics={item.musics} />}>
-          <AlbumRowContent album={item.album} artist={item.artist} count={item.count} musics={item.musics} />
+          <AlbumRow album={item.album} artist={item.artist} count={item.count} musics={item.musics} />
         </NavigationLink>
       ))}
     </List>
-  )
-}
-
-/** 列表行：圆角方形真实封面懒加载，查不到→本地封面回退→占位图标。 */
-function AlbumRowContent({ album, artist, count, musics }: { album: string, artist: string, count: number, musics: Music[] }) {
-  const localCover = musics.find(m => m.cover_url)?.cover_url
-  const [thumb, setThumb] = useState<string | null>(localCover ?? null)
-  const [failed, setFailed] = useState(false)
-
-  useEffect(() => {
-    let alive = true
-    albumInfo.fetch(artist, album).then(info => {
-      if (alive && info?.thumb) setThumb(info.thumb)
-    }).catch(() => { })
-    return () => { alive = false }
-  }, [album, artist])
-
-  return (
-    <HStack spacing={12}>
-      {thumb && !failed ? (
-        <Image
-          imageUrl={thumb}
-          resizable={true}
-          scaleToFill={true}
-          frame={{ width: 44, height: 44 }}
-          clipShape={{ type: "rect", cornerRadius: 6 }}
-          onError={() => setFailed(true)}
-          placeholder={<Image systemName="square.stack.fill" font="largeTitle" tint="accentColor" frame={{ width: 44, height: 44 }} />}
-        />
-      ) : (
-        <Image systemName="square.stack.fill" font="largeTitle" tint="accentColor" frame={{ width: 40, height: 40 }} />
-      )}
-      <VStack alignment="leading" spacing={2}>
-        <Text font="headline" lineLimit={1}>{album}</Text>
-        <Text font="subheadline" foregroundStyle="secondaryLabel" lineLimit={1}>{artist} · {count} 首歌曲</Text>
-      </VStack>
-    </HStack>
   )
 }
 

@@ -23,6 +23,8 @@ import { player } from "../../class/player"
 import { fileManager } from "../../class/file_manager"
 import { SearchResultCard } from "./components/search_result_card"
 import { SongRow } from "../components/song_row"
+import { ArtistResultsSection, AlbumResultsSection } from "./components/entity_results"
+import { SearchPlaceholder } from "./components/search_placeholder"
 import { addToHistory, getHistory, clearHistory } from "./components/search_history"
 import { usePlayerState } from "../../class/player_state"
 import { PlaylistPickerContent } from "../components/playlist_picker"
@@ -30,7 +32,9 @@ import { LRUCache } from "../../class/lru_cache"
 
 type CacheEntry = { data: MusicData[], timestamp: number }
 type SortType = "relevance" | "title" | "artist"
-type SearchMode = "online" | "local"
+type SearchMode = "online" | "local" | "artist" | "album"
+type ArtistGroup = { artist: string, count: number, musics: Music[] }
+type AlbumGroup = { album: string, artist: string, count: number, musics: Music[] }
 
 const searchCache = new LRUCache<string, CacheEntry>(50)
 const CACHE_DURATION = 5 * 60 * 1000
@@ -41,6 +45,8 @@ export function SearchView() {
   const [mode, setMode] = useState<SearchMode>("online")
   const [results, setResults] = useState<MusicData[] | null>(null)
   const [localResults, setLocalResults] = useState<Music[] | null>(null)
+  const [artistResults, setArtistResults] = useState<ArtistGroup[] | null>(null)
+  const [albumResults, setAlbumResults] = useState<AlbumGroup[] | null>(null)
   const [localCoverExists, setLocalCoverExists] = useState<Record<string, boolean>>({})
   const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -84,8 +90,46 @@ export function SearchView() {
 
     if (mode === "local") {
       await doLocalSearch(trimmed)
+    } else if (mode === "artist") {
+      await doArtistSearch(trimmed)
+    } else if (mode === "album") {
+      await doAlbumSearch(trimmed)
     } else {
       await doOnlineSearch(trimmed)
+    }
+  }
+
+  async function doArtistSearch(q: string) {
+    setIsSearching(true)
+    setArtistResults(null)
+    setError(null)
+    try {
+      const groups = await database.getMusicByArtist()
+      const lower = q.toLowerCase()
+      setArtistResults(groups.filter(g => g.artist.toLowerCase().includes(lower)))
+    } catch {
+      setError("搜索失败")
+      setArtistResults([])
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
+  async function doAlbumSearch(q: string) {
+    setIsSearching(true)
+    setAlbumResults(null)
+    setError(null)
+    try {
+      const groups = await database.getMusicByAlbum()
+      const lower = q.toLowerCase()
+      setAlbumResults(groups.filter(g =>
+        g.album.toLowerCase().includes(lower) || g.artist.toLowerCase().includes(lower)
+      ))
+    } catch {
+      setError("搜索失败")
+      setAlbumResults([])
+    } finally {
+      setIsSearching(false)
     }
   }
 
@@ -187,9 +231,15 @@ export function SearchView() {
 
   const hasOnlineResults = results !== null && results.length > 0
   const hasLocalResults = localResults !== null && localResults.length > 0
+  const hasArtistResults = artistResults !== null && artistResults.length > 0
+  const hasAlbumResults = albumResults !== null && albumResults.length > 0
   const showEmpty = mode === "online"
     ? (results !== null && results.length === 0)
-    : (localResults !== null && localResults.length === 0)
+    : mode === "local"
+      ? (localResults !== null && localResults.length === 0)
+      : mode === "artist"
+        ? (artistResults !== null && artistResults.length === 0)
+        : (albumResults !== null && albumResults.length === 0)
 
   return (
     <List
@@ -202,7 +252,10 @@ export function SearchView() {
         value: inputValue,
         onChanged: setInputValue,
         placement: "navigationBarDrawer",
-        prompt: mode === "local" ? "搜索本地歌曲" : "搜索音乐、艺人、专辑"
+        prompt: mode === "online" ? "搜索音乐、艺人、专辑"
+          : mode === "local" ? "搜索本地歌曲"
+          : mode === "artist" ? "搜索库中艺人"
+          : "搜索库中专辑"
       }}
       searchSuggestions={
         <>
@@ -238,30 +291,17 @@ export function SearchView() {
                 >
           <Text tag="online">在线</Text>
           <Text tag="local">本地</Text>
+          <Text tag="artist">艺人</Text>
+          <Text tag="album">专辑</Text>
         </Picker>
       </Section>
 
       {isSearching ? (
-        <Section>
-          <VStack spacing={12} padding={{ top: 40, bottom: 40 }} frame={{ maxWidth: "infinity" }}>
-            <Image systemName="magnifyingglass" font="largeTitle" foregroundStyle="tertiaryLabel" />
-            <Text font="headline" foregroundStyle="secondaryLabel">正在搜索...</Text></VStack>
-        </Section>
+        <SearchPlaceholder kind="searching" />
       ) : error ? (
-        <Section>
-          <VStack spacing={8} padding={{ top: 40, bottom: 40 }} frame={{ maxWidth: "infinity" }}>
-            <Image systemName="wifi.slash" font="largeTitle" foregroundStyle="tertiaryLabel" />
-            <Text font="headline" foregroundStyle="secondaryLabel">搜索失败</Text>
-            <Text font="subheadline" foregroundStyle="tertiaryLabel">{error}</Text>
-          </VStack>
-        </Section>
+        <SearchPlaceholder kind="error" errorMessage={error} />
       ) : showEmpty ? (
-        <Section>
-          <VStack spacing={8} padding={{ top: 40, bottom: 40 }} frame={{ maxWidth: "infinity" }}>
-            <Image systemName="music.note.list" font="largeTitle" foregroundStyle="tertiaryLabel" />
-            <Text font="headline" foregroundStyle="secondaryLabel">未找到相关音乐</Text><Text font="subheadline" foregroundStyle="tertiaryLabel">试试其他关键词</Text>
-          </VStack>
-        </Section>
+        <SearchPlaceholder kind="empty" />
       ) : mode === "online" && hasOnlineResults ? (
               <Section header={<Text>{`"${query}" 的搜索结果`}</Text>}>
                 {results!.map(item => (
@@ -290,6 +330,10 @@ export function SearchView() {
             />
           ))}
         </Section>
+      ) : mode === "artist" && hasArtistResults ? (
+        <ArtistResultsSection artists={artistResults!} query={query} />
+      ) : mode === "album" && hasAlbumResults ? (
+        <AlbumResultsSection albums={albumResults!} query={query} />
       ) : (
         history.length > 0 ? (
           <Section

@@ -4,6 +4,7 @@ import { Title } from "./title"
 import { ProgressSlider } from "./slider"
 import { Control } from "./control"
 import { Lyric } from "./lyric"
+import { PlayerArtistSheet, PlayerAlbumSheet } from "./entity_sheet"
 import { PlayerProgressProvider, usePlayerState } from "../../class/player_state"
 
 export function PlayerView() {
@@ -16,12 +17,38 @@ function PlayerPage() {
   const { currentMusic } = usePlayerState()
   // 歌词展开态：点击歌词区切换。展开时收起封面、放大歌词。
   const [lyricExpanded, setLyricExpanded] = useState(false)
+  // 点击艺人/专辑后弹出的详情（叠在播放页 sheet 之上的嵌套 sheet）。
+  const [entityNav, setEntityNav] = useState<
+    | { kind: "artist", artist: string }
+    | { kind: "album", album: string, artist: string }
+    | null
+  >(null)
+
+  const openArtist = () => {
+    const a = currentMusic?.artist
+    if (a) setEntityNav({ kind: "artist", artist: a })
+  }
+  const openAlbum = () => {
+    const al = currentMusic?.album
+    const a = currentMusic?.artist ?? ""
+    if (al) setEntityNav({ kind: "album", album: al, artist: a })
+  }
+  const closeEntity = () => setEntityNav(null)
 
   const coverMaxHeight = lyricExpanded ? 0 : 320
   const lyricHeight = lyricExpanded ? Math.round(Device.screen.height * 0.46) : 150
   const expandAnim = { animation: Animation.smooth({ duration: 0.45 }), value: lyricExpanded }
   return (
-    <ZStack>
+    <ZStack
+      sheet={{
+        isPresented: entityNav !== null,
+        onChanged: (v: boolean) => { if (!v) closeEntity() },
+        content: entityNav === null ? null
+          : entityNav.kind === "artist"
+            ? <PlayerArtistSheet artist={entityNav.artist} onDismiss={closeEntity} />
+            : <PlayerAlbumSheet album={entityNav.album} artist={entityNav.artist} onDismiss={closeEntity} />
+      }}
+    >
       {/* 全屏动态背景（MeshGradient / 模糊封面） */}
       <CoverBackground
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
@@ -56,7 +83,7 @@ function PlayerPage() {
               clipShape={{ type: "rect", cornerRadius: 8 }}
               shadow={{ color: "rgba(0,0,0,0.4)", radius: 8, y: 3 }}
             />
-            <Title compact={true} />
+            <Title compact={true} onArtistTap={openArtist} />
           </HStack>
         ) : (
           <VStack spacing={0} frame={{ maxWidth: "infinity" }} animation={expandAnim}>
@@ -68,7 +95,7 @@ function PlayerPage() {
               shadow={{ color: "rgba(0,0,0,0.45)", radius: 30, y: 14 }}
             />
             {/* 标题（紧跟封面，如 Apple Music） */}
-            <Title padding={{ top: 24 }} />
+            <Title padding={{ top: 24 }} onArtistTap={openArtist} onAlbumTap={openAlbum} />
           </VStack>
         )}
         <ProgressSlider padding={{ top: 14 }} />
