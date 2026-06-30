@@ -1,5 +1,6 @@
-import { List, Section, Button, Label, HStack, VStack, Text, Image, Spacer, useEffect, useMemo, useState, Menu, Toolbar, ToolbarItem, NavigationLink, ForEach, useObservable } from "scripting"
+import { List, Section, Button, Label, HStack, VStack, ZStack, Rectangle, Text, Image, Spacer, useEffect, useMemo, useState, Menu, Toolbar, ToolbarItem, NavigationLink, ForEach, useObservable } from "scripting"
 import { database, Music } from "../../class/database"
+import { albumInfo, AlbumInfo } from "../../class/sources/album_info"
 import { player } from "../../class/player"
 import { usePlayerState } from "../../class/player_state"
 import { fileManager } from "../../class/file_manager"
@@ -135,6 +136,7 @@ function AlbumDetail({ album, artist, musics: initialMusics }: { album: string, 
         </Toolbar>
       }
     >
+      {!isEditing && <AlbumHeader album={album} artist={artist} musics={musics} />}
       {!isEditing && (
         <Section>
           <Button action={async () => { player.setQueue(filtered, 0); await player.play(filtered[0]) }}>
@@ -200,15 +202,155 @@ export function AlbumsView() {
         <NavigationLink
           key={`${item.album}-${item.artist}`}
           destination={<AlbumDetail album={item.album} artist={item.artist} musics={item.musics} />}>
-          <HStack spacing={12}>
-            <Image systemName="square.stack.fill" font="largeTitle" tint="accentColor" frame={{ width: 40, height: 40 }} />
-            <VStack alignment="leading" spacing={2}>
-              <Text font="headline" lineLimit={1}>{item.album}</Text>
-              <Text font="subheadline" foregroundStyle="secondaryLabel" lineLimit={1}>{item.artist} · {item.count} 首歌曲</Text>
-            </VStack>
-          </HStack>
+          <AlbumRowContent album={item.album} artist={item.artist} count={item.count} musics={item.musics} />
         </NavigationLink>
       ))}
     </List>
+  )
+}
+
+/** 列表行：圆角方形真实封面懒加载，查不到→本地封面回退→占位图标。 */
+function AlbumRowContent({ album, artist, count, musics }: { album: string, artist: string, count: number, musics: Music[] }) {
+  const localCover = musics.find(m => m.cover_url)?.cover_url
+  const [thumb, setThumb] = useState<string | null>(localCover ?? null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    albumInfo.fetch(artist, album).then(info => {
+      if (alive && info?.thumb) setThumb(info.thumb)
+    }).catch(() => { })
+    return () => { alive = false }
+  }, [album, artist])
+
+  return (
+    <HStack spacing={12}>
+      {thumb && !failed ? (
+        <Image
+          imageUrl={thumb}
+          resizable={true}
+          scaleToFill={true}
+          frame={{ width: 44, height: 44 }}
+          clipShape={{ type: "rect", cornerRadius: 6 }}
+          onError={() => setFailed(true)}
+          placeholder={<Image systemName="square.stack.fill" font="largeTitle" tint="accentColor" frame={{ width: 44, height: 44 }} />}
+        />
+      ) : (
+        <Image systemName="square.stack.fill" font="largeTitle" tint="accentColor" frame={{ width: 40, height: 40 }} />
+      )}
+      <VStack alignment="leading" spacing={2}>
+        <Text font="headline" lineLimit={1}>{album}</Text>
+        <Text font="subheadline" foregroundStyle="secondaryLabel" lineLimit={1}>{artist} · {count} 首歌曲</Text>
+      </VStack>
+    </HStack>
+  )
+}
+
+/** 详情页 banner 渐变暗角（顶部轻、底部深，保白字/chips 可读）。与艺人页/播放页 SCRIM 同式。 */
+const BANNER_SCRIM = {
+  colors: ["rgba(0,0,0,0.12)", "rgba(0,0,0,0.34)", "rgba(0,0,0,0.78)"],
+  startPoint: "top",
+  endPoint: "bottom",
+} as any
+
+/** 详情页顶部 header：专辑封面大图 + 信息 chips + 可展开简介。信息全缺失时不渲染。 */
+function AlbumHeader({ album, artist, musics }: { album: string, artist: string, musics: Music[] }) {
+  const localCover = musics.find(m => m.cover_url)?.cover_url ?? null
+  const [info, setInfo] = useState<AlbumInfo | null>(null)
+  const [coverFailed, setCoverFailed] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    albumInfo.fetch(artist, album).then(i => { if (alive) setInfo(i) }).catch(() => { })
+    return () => { alive = false }
+  }, [album, artist])
+
+  const cover = (info?.thumb ?? localCover) || undefined
+  const hasCover = !!cover && !coverFailed
+  const description = info?.description
+
+  // 结构化 chips：年代 / 流派 / 厂牌
+  const chips: { icon: string, text: string }[] = []
+  if (info?.year) chips.push({ icon: "calendar", text: info.year })
+  if (info?.genre) chips.push({ icon: "guitars", text: info.genre })
+  if (info?.label) chips.push({ icon: "building.2", text: info.label })
+
+  const hasContent = hasCover || !!description || chips.length > 0
+  // 首帧/加载中/查无/信息全缺失 → 渲染空 Section（不能返回裸 null，否则 List 子节点报 e.isInternal）。
+  if (!hasContent) {
+    return <Section listRowInsets={0} listRowSeparator="hidden" />
+  }
+
+  const coverImage = hasCover ? (
+    <Image
+      imageUrl={cover!}
+      resizable={true}
+      scaleToFill={true}
+      frame={{ width: 150, height: 150 }}
+      clipShape={{ type: "rect", cornerRadius: 10 }}
+      shadow={{ color: "rgba(0,0,0,0.35)", radius: 10, x: 0, y: 5 }}
+      onError={() => setCoverFailed(true)}
+      placeholder={<Image systemName="square.stack.fill" font={{ name: "system", size: 80 }} tint="white" frame={{ width: 150, height: 150 }} />}
+    />
+  ) : (
+    <Image systemName="square.stack.fill" font={{ name: "system", size: 80 }} foregroundStyle="accentColor" frame={{ width: 150, height: 150 }} />
+  )
+
+  const foreground = (
+    <VStack spacing={10} padding={{ vertical: 18, horizontal: 16 }}>
+      {coverImage}
+      <Text font="title2" fontWeight="bold" foregroundStyle={hasCover ? "white" : "label"} lineLimit={2} multilineTextAlignment="center">{info?.album ?? album}</Text>
+      <Text font="subheadline" fontWeight="medium" foregroundStyle={hasCover ? "white" : "secondaryLabel"} lineLimit={1} multilineTextAlignment="center">{info?.artist ?? artist}</Text>
+      {chips.length > 0 && (
+        <HStack spacing={8}>
+          {chips.map((c, i) => (
+            <HStack key={i} spacing={4} padding={{ horizontal: 10, vertical: 5 }} background={hasCover ? "rgba(255,255,255,0.18)" : "secondarySystemBackground"} clipShape="capsule">
+              <Image systemName={c.icon} font="caption2" foregroundStyle={hasCover ? "white" : "secondaryLabel"} />
+              <Text font="caption" fontWeight="medium" foregroundStyle={hasCover ? "white" : "secondaryLabel"} lineLimit={1}>{c.text}</Text>
+            </HStack>
+          ))}
+        </HStack>
+      )}
+    </VStack>
+  )
+
+  return (
+    <Section listRowInsets={0} listRowSeparator="hidden">
+      <VStack spacing={0} frame={{ maxWidth: "infinity" }}>
+        {hasCover ? (
+          <ZStack frame={{ maxWidth: "infinity" }}>
+            <Image
+              imageUrl={cover!}
+              resizable={true}
+              scaleToFill={true}
+              frame={{ maxWidth: "infinity", height: 300 }}
+              clipped={true}
+              onError={() => setCoverFailed(true)}
+              blur={28}
+            />
+            <Rectangle
+              frame={{ maxWidth: "infinity", height: 300 }}
+              fill={BANNER_SCRIM}
+            />
+            {foreground}
+          </ZStack>
+        ) : (
+          foreground
+        )}
+
+        {description && (
+          <Button action={() => setExpanded(e => !e)} buttonStyle="plain">
+            <VStack alignment="leading" spacing={6} padding={{ horizontal: 16, top: 14, bottom: 16 }} frame={{ maxWidth: "infinity" }} contentShape="rect">
+              <Text font="body" foregroundStyle="secondaryLabel" lineLimit={expanded ? undefined : 3}>{description}</Text>
+              <HStack spacing={3}>
+                <Text font="caption" fontWeight="semibold" foregroundStyle="systemPink">{expanded ? "收起" : "展开"}</Text>
+                <Image systemName={expanded ? "chevron.up" : "chevron.down"} font="caption2" foregroundStyle="systemPink" />
+              </HStack>
+            </VStack>
+          </Button>
+        )}
+      </VStack>
+    </Section>
   )
 }
