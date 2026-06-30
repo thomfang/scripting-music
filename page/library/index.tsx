@@ -3,24 +3,31 @@ import {
   NavigationLink, ProgressView, ScrollView, Section, Spacer, Toolbar,
   ToolbarItem, useEffect, useObservable, useState,
 } from "scripting"
-import { database, Music } from "../../class/database"
+import { database, Music, Playlist } from "../../class/database"
 import { player } from "../../class/player"
 import { fileManager } from "../../class/file_manager"
 import { usePlayerState } from "../../class/player_state"
 import { DownloadView } from "./download"
 import { AllSongsView } from "./all_songs"
 import { FavoritesView } from "./favorites"
-import { ArtistsView } from "./artists"
-import { AlbumsView } from "./albums"
-import { PlaylistsView } from "./playlists"
+import { ArtistsView, ArtistDetail } from "./artists"
+import { AlbumsView, AlbumDetail } from "./albums"
+import { PlaylistsView, PlaylistDetailPage } from "./playlists"
 import { RecentlyPlayedView, TopPlayedView } from "./smart_playlists"
 import {
   LibrarySectionHeader, QuickEntryGrid, QuickEntry,
   RecentlyAddedCard, FavoriteSongRow,
+  ArtistCircleCard, AlbumCoverCard, PlaylistCollageCard, HorizontalCardRail,
 } from "./components"
 
 const RECENT_LIMIT = 12
 const FAVORITE_LIMIT = 5
+const CARD_LIMIT = 12
+const PLAYLIST_CARD_LIMIT = 10
+
+type ArtistCard = { artist: string, count: number, musics: Music[] }
+type AlbumCard = { album: string, artist: string, count: number, musics: Music[] }
+type PlaylistCard = { playlist: Playlist, musics: Music[] }
 
 type LibraryData = {
   all: Music[]
@@ -34,6 +41,9 @@ type LibraryData = {
   playlistCount: number
   artistCount: number
   albumCount: number
+  artistCards: ArtistCard[]
+  albumCards: AlbumCard[]
+  playlistCards: PlaylistCard[]
   coverExists: Record<string, boolean>
 }
 
@@ -51,6 +61,10 @@ export function LibraryView() {
   const [navTarget, setNavTarget] = useState<JSX.Element | null>(null)
   const onSelectEntry = (entry: QuickEntry) => {
     setNavTarget(entry.destination)
+    navPresented.setValue(true)
+  }
+  const pushDetail = (el: JSX.Element) => {
+    setNavTarget(el)
     navPresented.setValue(true)
   }
 
@@ -86,10 +100,22 @@ export function LibraryView() {
       const recentlyPlayedCount = all.filter(m => m.last_played_at).length
       const topPlayedCount = all.filter(m => m.play_count > 0).length
 
-      // 本地封面存在性（仅卡片墙 + 最爱行涉及的曲目）
+      // 卡片数据：艺人/专辑取前 N；播放列表取前 N 个并拉前 4 首做拼图
+      const artistCards: ArtistCard[] = artists.slice(0, CARD_LIMIT)
+      const albumCards: AlbumCard[] = albums.slice(0, CARD_LIMIT)
+      const playlistCards: PlaylistCard[] = await Promise.all(
+        playlists.slice(0, PLAYLIST_CARD_LIMIT).map(async (p: Playlist) => {
+          const m = await database.getPlaylistMusic(p.id).catch(() => [] as Music[])
+          return { playlist: p, musics: m.slice(0, 4) }
+        })
+      )
+
+      // 本地封面存在性（卡片墙 + 最爱行 + 拼图涉及的曲目）
       const coverTargets = new Map<string, Music>()
       for (const m of recentlyAdded) coverTargets.set(m.id, m)
       for (const m of favoriteRows) coverTargets.set(m.id, m)
+      for (const c of albumCards) if (c.musics[0]) coverTargets.set(c.musics[0].id, c.musics[0])
+      for (const c of playlistCards) for (const m of c.musics) coverTargets.set(m.id, m)
       const coverExists: Record<string, boolean> = {}
       await Promise.all([...coverTargets.values()].map(async m => {
         coverExists[m.id] = await fileManager.coverExists(m.id).catch(() => false)
@@ -101,6 +127,7 @@ export function LibraryView() {
         playlistCount: playlists.length,
         artistCount: artists.length,
         albumCount: albums.length,
+        artistCards, albumCards, playlistCards,
         coverExists,
       })
     } catch (e) {
@@ -131,8 +158,6 @@ export function LibraryView() {
     { key: "favorites", label: "我喜欢", icon: "heart.fill", color: "systemPink", count: data.favorites.length, destination: <FavoritesView /> },
     { key: "downloaded", label: "已下载", icon: "arrow.down.circle.fill", color: "systemGreen", count: data.downloadedCount, destination: <DownloadView /> },
     { key: "recent", label: "最近播放", icon: "clock.fill", color: "systemOrange", count: data.recentlyPlayedCount, destination: <RecentlyPlayedView /> },
-    { key: "top", label: "最爱精选", icon: "star.fill", color: "systemYellow", count: data.topPlayedCount, destination: <TopPlayedView /> },
-    { key: "playlists", label: "播放列表", icon: "square.stack.3d.up.fill", color: "systemPurple", count: data.playlistCount, destination: <PlaylistsView /> },
   ] : []
 
   const toolbarEl = (
@@ -199,6 +224,88 @@ export function LibraryView() {
         </Section>
       )}
 
+      {/* 艺人 — 横向圆形卡 */}
+      {data && data.artistCards.length > 0 && (
+        <Section
+          header={
+            <LibrarySectionHeader
+              icon="music.mic"
+              title="艺人"
+              subtitle={`${data.artistCount} 位`}
+              seeAllDestination={<ArtistsView />}
+            />
+          }
+        >
+          <ScrollView axes="horizontal" listRowInsets={0} listRowSeparator="hidden">
+            <HStack spacing={14} padding={{ horizontal: 16, vertical: 6 }}>
+              {data.artistCards.map(c => (
+                <ArtistCircleCard
+                  key={c.artist}
+                  artist={c.artist}
+                  count={c.count}
+                  onTap={() => pushDetail(<ArtistDetail artist={c.artist} musics={c.musics} />)}
+                />
+              ))}
+            </HStack>
+          </ScrollView>
+        </Section>
+      )}
+
+      {/* 专辑 — 横向封面卡 */}
+      {data && data.albumCards.length > 0 && (
+        <Section
+          header={
+            <LibrarySectionHeader
+              icon="square.stack.fill"
+              title="专辑"
+              subtitle={`${data.albumCount} 张`}
+              seeAllDestination={<AlbumsView />}
+            />
+          }
+        >
+          <ScrollView axes="horizontal" listRowInsets={0} listRowSeparator="hidden">
+            <HStack spacing={14} padding={{ horizontal: 16, vertical: 6 }}>
+              {data.albumCards.map(c => (
+                <AlbumCoverCard
+                  key={`${c.album}-${c.artist}`}
+                  album={c.album}
+                  artist={c.artist}
+                  musics={c.musics}
+                  onTap={() => pushDetail(<AlbumDetail album={c.album} artist={c.artist} musics={c.musics} />)}
+                />
+              ))}
+            </HStack>
+          </ScrollView>
+        </Section>
+      )}
+
+      {/* 播放列表 — 横向拼图卡 */}
+      {data && data.playlistCards.length > 0 && (
+        <Section
+          header={
+            <LibrarySectionHeader
+              icon="square.stack.3d.up.fill"
+              title="播放列表"
+              subtitle={`${data.playlistCount} 个`}
+              seeAllDestination={<PlaylistsView />}
+            />
+          }
+        >
+          <ScrollView axes="horizontal" listRowInsets={0} listRowSeparator="hidden">
+            <HStack spacing={14} padding={{ horizontal: 16, vertical: 6 }}>
+              {data.playlistCards.map(c => (
+                <PlaylistCollageCard
+                  key={c.playlist.id}
+                  playlist={c.playlist}
+                  musics={c.musics}
+                  onTap={() => pushDetail(<PlaylistDetailPage playlistId={c.playlist.id} onDeleted={load} />)}
+                />
+              ))}
+            </HStack>
+          </ScrollView>
+        </Section>
+      )}
+
       {/* C — 最爱歌曲 */}
       {data && data.favoriteRows.length > 0 && (
         <Section
@@ -223,19 +330,6 @@ export function LibraryView() {
           ))}
         </Section>
       )}
-
-      {/* D — 资料库分类 */}
-      <Section header={<LibrarySectionHeader icon="square.grid.2x2.fill" iconColor="secondaryLabel" title="资料库" />}>
-        <NavigationLink destination={<ArtistsView />}>
-          <Label title="艺人" systemImage="music.mic" symbolRenderingMode="hierarchical" badge={data?.artistCount ?? 0} />
-        </NavigationLink>
-        <NavigationLink destination={<AlbumsView />}>
-          <Label title="专辑" systemImage="square.stack.fill" symbolRenderingMode="hierarchical" badge={data?.albumCount ?? 0} />
-        </NavigationLink>
-        <NavigationLink destination={<PlaylistsView />}>
-          <Label title="播放列表" systemImage="square.stack.3d.up.fill" symbolRenderingMode="hierarchical" badge={data?.playlistCount ?? 0} />
-        </NavigationLink>
-      </Section>
 
       {/* 空库引导 */}
       {!hasContent && (

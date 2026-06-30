@@ -1,12 +1,13 @@
 import {
   Button, ForEach, HStack, Image, Label, List, Menu, Navigation, NavigationLink,
-  Section, Text, Toolbar, ToolbarItem, VStack,
+  Rectangle, ScrollView, Section, Text, Toolbar, ToolbarItem, VStack, ZStack,
   useEffect, useMemo, useObservable, useState
 } from "scripting"
 import { database, Music, Playlist } from "../../class/database"
 import { player } from "../../class/player"
 import { usePlayerState } from "../../class/player_state"
 import { fileManager } from "../../class/file_manager"
+import { CoverCollage } from "./components"
 import { PlaylistPickerContent } from "../components/playlist_picker"
 import { SongRow } from "../components/song_row"
 import { BatchDownloadProgressSection } from "../components/batch_download_progress"
@@ -17,12 +18,20 @@ import { downloadManager } from "../../class/download_manager"
 
 export function PlaylistsView() {
   const playlists = useObservable<Playlist[]>([])
+  const [collageMusics, setCollageMusics] = useState<Record<string, Music[]>>({})
   const [showImportPicker, setShowImportPicker] = useState(false)
   const [pendingImportFile, setPendingImportFile] = useState<string | null>(null)
 
   async function loadPlaylists() {
     await safeRun(async () => {
-      playlists.setValue(await database.getAllPlaylists())
+      const list = await database.getAllPlaylists()
+      playlists.setValue(list)
+      // 为拼图拉取各歌单前 4 首（并发）
+      const entries = await Promise.all(list.map(async p => {
+        const m = await database.getPlaylistMusic(p.id).catch(() => [] as Music[])
+        return [p.id, m.slice(0, 4)] as const
+      }))
+      setCollageMusics(Object.fromEntries(entries))
     }, { tag: "playlists.load" })
   }
 
@@ -135,7 +144,7 @@ export function PlaylistsView() {
       {playlists.value.map(playlist => (
         <NavigationLink key={playlist.id} destination={<PlaylistDetail playlistId={playlist.id} onDeleted={loadPlaylists} />}>
           <HStack spacing={12}>
-            <Image systemName="music.note.list" font="title2" tint="accentColor" frame={{ width: 50, height: 50 }} />
+            <CoverCollage musics={collageMusics[playlist.id] ?? []} size={50} cornerRadius={9} shadow={false} />
             <VStack alignment="leading" spacing={2}>
               <Text font="headline">{playlist.name}</Text>
               <Text font="subheadline" foregroundStyle="secondaryLabel">{playlist.music_count} 首歌曲</Text>
@@ -374,6 +383,7 @@ function PlaylistDetail({ playlistId, onDeleted }: { playlistId: string, onDelet
       }
     >
       <BatchDownloadProgressSection progress={batchDownload} />
+      {!isEditing && <PlaylistHeader playlist={playlist.value} musics={musics} coverExists={coverExists} />}
       {!isEditing && musics.length > 0 && (
         <Section>
           <Button action={async () => { player.setQueue(filtered, 0); await player.play(filtered[0]) }}>
@@ -426,4 +436,77 @@ function PlaylistDetail({ playlistId, onDeleted }: { playlistId: string, onDelet
       </Section>
     </List>
   )
+}
+
+/** 详情页 banner 渐变暗角（与专辑/艺人页 SCRIM 同式）。 */
+const BANNER_SCRIM = {
+  colors: ["rgba(0,0,0,0.12)", "rgba(0,0,0,0.34)", "rgba(0,0,0,0.78)"],
+  startPoint: "top",
+  endPoint: "bottom",
+} as any
+
+function formatTotalDuration(secs: number): string {
+  if (secs <= 0) return ""
+  const h = Math.floor(secs / 3600)
+  const m = Math.round((secs % 3600) / 60)
+  if (h > 0) return `${h} 小时 ${m} 分钟`
+  return `${m} 分钟`
+}
+
+function formatUpdatedAt(ts: number): string {
+  if (!ts) return ""
+  const d = new Date(ts)
+  const y = d.getFullYear()
+  const mo = (d.getMonth() + 1).toString().padStart(2, "0")
+  const da = d.getDate().toString().padStart(2, "0")
+  return `${y}-${mo}-${da}`
+}
+
+/** 详情页顶部 header：拼图封面 banner + 名称 + 统计 chips。与 AlbumHeader 对齐。 */
+function PlaylistHeader({ playlist, musics, coverExists }: { playlist: Playlist, musics: Music[], coverExists: Record<string, boolean> }) {
+  const totalDuration = musics.reduce((sum, m) => sum + (m.duration > 0 ? m.duration : 0), 0)
+  const hasCover = musics.length > 0
+
+  const chips: { icon: string, text: string }[] = []
+  chips.push({ icon: "music.note", text: `${playlist.music_count} 首` })
+  const dur = formatTotalDuration(totalDuration)
+  if (dur) chips.push({ icon: "clock", text: dur })
+  const updated = formatUpdatedAt(playlist.updated_at)
+  if (updated) chips.push({ icon: "calendar", text: `更新 ${updated}` })
+
+  const foreground = (
+    <VStack spacing={10} padding={{ vertical: 18, horizontal: 16 }}>
+      <CoverCollage musics={musics.slice(0, 4)} size={150} cornerRadius={12} />
+      <Text font="title2" fontWeight="bold" foregroundStyle={hasCover ? "white" : "label"} lineLimit={2} multilineTextAlignment="center">{playlist.name}</Text>
+      <HStack spacing={8}>
+        {chips.map((c, i) => (
+          <HStack key={i} spacing={4} padding={{ horizontal: 10, vertical: 5 }} background={hasCover ? "rgba(255,255,255,0.18)" : "secondarySystemBackground"} clipShape="capsule">
+            <Image systemName={c.icon} font="caption2" foregroundStyle={hasCover ? "white" : "secondaryLabel"} />
+            <Text font="caption" fontWeight="medium" foregroundStyle={hasCover ? "white" : "secondaryLabel"} lineLimit={1}>{c.text}</Text>
+          </HStack>
+        ))}
+      </HStack>
+    </VStack>
+  )
+
+  return (
+    <Section listRowInsets={0} listRowSeparator="hidden">
+      <VStack spacing={0} frame={{ maxWidth: "infinity" }}>
+        {hasCover ? (
+          <ZStack frame={{ maxWidth: "infinity", height: 300 }} clipped={true}>
+            <CoverCollage musics={musics.slice(0, 4)} size={Device.screen.width} cornerRadius={0} shadow={false} blur={28} />
+            <Rectangle frame={{ maxWidth: "infinity", height: 300 }} fill={BANNER_SCRIM} />
+            {foreground}
+          </ZStack>
+        ) : (
+          foreground
+        )}
+      </VStack>
+    </Section>
+  )
+}
+
+/** 供资料库首页卡片编程式跳转的包装（自带 onDeleted 空实现，调用方可覆盖）。 */
+export function PlaylistDetailPage({ playlistId, onDeleted }: { playlistId: string, onDeleted?: () => void }) {
+  return <PlaylistDetail playlistId={playlistId} onDeleted={onDeleted ?? (() => { })} />
 }

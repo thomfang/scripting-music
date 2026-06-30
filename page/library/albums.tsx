@@ -10,7 +10,7 @@ import { SongRow } from "../components/song_row"
 
 type SortType = "title" | "added"
 
-function AlbumDetail({ album, artist, musics: initialMusics }: { album: string, artist: string, musics: Music[] }) {
+export function AlbumDetail({ album, artist, musics: initialMusics }: { album: string, artist: string, musics: Music[] }) {
   const state = usePlayerState()
   const [musics, setMusics] = useState<Music[]>(initialMusics)
   const [coverExists, setCoverExists] = useState<Record<string, boolean>>({})

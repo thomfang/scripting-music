@@ -9,10 +9,12 @@
  */
 import {
   Button, HStack, Image, LazyVGrid, NavigationLink, Spacer, Text, VStack, ZStack,
-  useState,
+  useEffect, useState,
 } from "scripting"
-import { Music } from "../../class/database"
+import { Music, Playlist } from "../../class/database"
 import { fileManager } from "../../class/file_manager"
+import { artistInfo } from "../../class/sources/artist_info"
+import { albumInfo } from "../../class/sources/album_info"
 
 // ---- 富 Section 头 ----
 
@@ -255,5 +257,228 @@ export function FavoriteSongRow({ music, rank, coverExists, isPlaying, showPlayC
         <Image systemName="heart.fill" font="footnote" foregroundStyle="systemPink" />
       )}
     </HStack>
+  )
+}
+
+// ---- 封面拼图（播放列表）----
+
+/** 单格封面：本地优先 → 远程回退 → 占位。size 为该格边长。 */
+function CoverTile({ music, size }: { music?: Music, size: number }) {
+  const [remoteError, setRemoteError] = useState(false)
+  const [localExists, setLocalExists] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    if (!music) { setLocalExists(false); return }
+    fileManager.coverExists(music.id)
+      .then(e => { if (alive) setLocalExists(e) })
+      .catch(() => { if (alive) setLocalExists(false) })
+    return () => { alive = false }
+  }, [music?.id])
+
+  const showLocal = music && localExists === true
+  const showRemote = music && localExists === false && !!music.cover_url && !remoteError
+
+  if (showLocal) {
+    return (
+      <Image
+        filePath={fileManager.getCoverPath(music!.id)}
+        resizable={true}
+        scaleToFill={true}
+        frame={{ width: size, height: size }}
+        clipped={true}
+      />
+    )
+  }
+  if (showRemote) {
+    return (
+      <Image
+        imageUrl={music!.cover_url!}
+        resizable={true}
+        scaleToFill={true}
+        frame={{ width: size, height: size }}
+        clipped={true}
+        onError={() => setRemoteError(true)}
+        placeholder={<Image systemName="music.note" tint="tertiaryLabel" frame={{ width: size, height: size }} background="secondarySystemBackground" />}
+      />
+    )
+  }
+  return (
+    <Image
+      systemName="music.note"
+      font="body"
+      tint="tertiaryLabel"
+      frame={{ width: size, height: size }}
+      background="tertiarySystemBackground"
+    />
+  )
+}
+
+export type CoverCollageProps = {
+  /** 已按 position 排序的歌单歌曲（至少传前 4 首即可） */
+  musics: Music[]
+  /** 整体边长 */
+  size: number
+  cornerRadius?: number
+  shadow?: boolean
+  /** 高斯模糊半径（用作模糊 banner 背景时） */
+  blur?: number
+}
+
+/**
+ * 播放列表封面拼图：
+ * - ≥4 首 → 2×2 四宫格（前 4 首封面）
+ * - 1–3 首 → 单张（第 1 首）
+ * - 0 首 → 占位图标
+ */
+export function CoverCollage({ musics, size, cornerRadius = 12, shadow = true, blur }: CoverCollageProps) {
+  const shadowProp = shadow ? { color: "rgba(0,0,0,0.22)", radius: 6, x: 0, y: 3 } : undefined
+  const clip = { type: "rect", cornerRadius } as any
+
+  if (musics.length === 0) {
+    return (
+      <Image
+        systemName="music.note.list"
+        font="largeTitle"
+        tint="secondaryLabel"
+        frame={{ width: size, height: size }}
+        background="secondarySystemBackground"
+        clipShape={clip}
+        shadow={shadowProp}
+        blur={blur}
+      />
+    )
+  }
+
+  if (musics.length < 4) {
+    return (
+      <ZStack frame={{ width: size, height: size }} clipShape={clip} shadow={shadowProp} blur={blur}>
+        <CoverTile music={musics[0]} size={size} />
+      </ZStack>
+    )
+  }
+
+  const half = size / 2
+  const four = musics.slice(0, 4)
+  return (
+    <VStack spacing={0} frame={{ width: size, height: size }} clipShape={clip} shadow={shadowProp} blur={blur}>
+      <HStack spacing={0}>
+        <CoverTile music={four[0]} size={half} />
+        <CoverTile music={four[1]} size={half} />
+      </HStack>
+      <HStack spacing={0}>
+        <CoverTile music={four[2]} size={half} />
+        <CoverTile music={four[3]} size={half} />
+      </HStack>
+    </VStack>
+  )
+}
+
+// ---- 横向卡片栏容器 ----
+
+/** 统一的横向卡片栏：放在一个 listRowInsets=0 的 Section 内。 */
+export function HorizontalCardRail({ children }: { children: (JSX.Element | null)[] | JSX.Element }) {
+  // 调用方负责包 ScrollView axes=horizontal（List row 形态由调用处控制）。
+  return (
+    <HStack spacing={14} padding={{ horizontal: 16, vertical: 6 }}>
+      {children}
+    </HStack>
+  )
+}
+
+// ---- 艺人圆形卡 ----
+
+export function ArtistCircleCard({ artist, count, onTap }: { artist: string, count: number, onTap: () => void }) {
+  const [thumb, setThumb] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    artistInfo.fetch(artist).then(info => {
+      if (alive && info?.thumb) setThumb(info.thumb)
+    }).catch(() => { })
+    return () => { alive = false }
+  }, [artist])
+
+  const DIAM = 118
+  const hasThumb = thumb && !failed
+  return (
+    <Button action={onTap} buttonStyle="plain">
+      <VStack spacing={7} frame={{ width: DIAM }}>
+        {hasThumb ? (
+          <Image
+            imageUrl={thumb!}
+            resizable={true}
+            scaleToFill={true}
+            frame={{ width: DIAM, height: DIAM }}
+            clipShape="capsule"
+            shadow={{ color: "rgba(0,0,0,0.22)", radius: 6, x: 0, y: 3 }}
+            onError={() => setFailed(true)}
+            placeholder={<Image systemName="person.circle.fill" font={{ name: "system", size: DIAM }} tint="accentColor" frame={{ width: DIAM, height: DIAM }} />}
+          />
+        ) : (
+          <Image systemName="person.circle.fill" font={{ name: "system", size: DIAM }} foregroundStyle="accentColor" frame={{ width: DIAM, height: DIAM }} />
+        )}
+        <Text font="subheadline" fontWeight="semibold" lineLimit={1} multilineTextAlignment="center" frame={{ width: DIAM }}>{artist}</Text>
+        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>{`${count} 首`}</Text>
+      </VStack>
+    </Button>
+  )
+}
+
+// ---- 专辑封面卡 ----
+
+export function AlbumCoverCard({ album, artist, musics, onTap }: { album: string, artist: string, musics: Music[], onTap: () => void }) {
+  const localCover = musics.find(m => m.cover_url)?.cover_url ?? null
+  const [thumb, setThumb] = useState<string | null>(localCover)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    albumInfo.fetch(artist, album).then(info => {
+      if (alive && info?.thumb) setThumb(info.thumb)
+    }).catch(() => { })
+    return () => { alive = false }
+  }, [album, artist])
+
+  const SIZE = 130
+  const clip = { type: "rect", cornerRadius: 14 } as any
+  const hasThumb = thumb && !failed
+  return (
+    <Button action={onTap} buttonStyle="plain">
+      <VStack alignment="leading" spacing={6} frame={{ width: SIZE }}>
+        {hasThumb ? (
+          <Image
+            imageUrl={thumb!}
+            resizable={true}
+            scaleToFill={true}
+            frame={{ width: SIZE, height: SIZE }}
+            clipShape={clip}
+            shadow={{ color: "rgba(0,0,0,0.22)", radius: 6, x: 0, y: 3 }}
+            onError={() => setFailed(true)}
+            placeholder={<Image systemName="square.stack.fill" font="largeTitle" tint="secondaryLabel" frame={{ width: SIZE, height: SIZE }} background="secondarySystemBackground" clipShape={clip} />}
+          />
+        ) : (
+          <Image systemName="square.stack.fill" font="largeTitle" tint="secondaryLabel" frame={{ width: SIZE, height: SIZE }} background="secondarySystemBackground" clipShape={clip} />
+        )}
+        <Text font="subheadline" fontWeight="semibold" lineLimit={1} frame={{ width: SIZE }}>{album}</Text>
+        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1} frame={{ width: SIZE }}>{artist}</Text>
+      </VStack>
+    </Button>
+  )
+}
+
+// ---- 播放列表拼图卡 ----
+
+export function PlaylistCollageCard({ playlist, musics, onTap }: { playlist: Playlist, musics: Music[], onTap: () => void }) {
+  const SIZE = 130
+  return (
+    <Button action={onTap} buttonStyle="plain">
+      <VStack alignment="leading" spacing={6} frame={{ width: SIZE }}>
+        <CoverCollage musics={musics} size={SIZE} cornerRadius={14} />
+        <Text font="subheadline" fontWeight="semibold" lineLimit={1} frame={{ width: SIZE }}>{playlist.name}</Text>
+        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>{`${playlist.music_count} 首`}</Text>
+      </VStack>
+    </Button>
   )
 }
