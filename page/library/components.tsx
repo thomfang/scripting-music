@@ -9,7 +9,7 @@
  */
 import {
   Button, HStack, Image, LazyVGrid, NavigationLink, Spacer, Text, VStack, ZStack,
-  useEffect, useState,
+  useEffect, useObservable, useState,
 } from "scripting"
 import { Music, Playlist } from "../../class/database"
 import { fileManager } from "../../class/file_manager"
@@ -63,9 +63,16 @@ export type QuickEntry = {
   destination: JSX.Element
 }
 
-function QuickEntryCard({ entry, onSelect }: { entry: QuickEntry; onSelect: (entry: QuickEntry) => void }) {
+function QuickEntryCard({ entry }: { entry: QuickEntry }) {
+  // 宫格是 LazyVGrid，内嵌 NavigationLink 会命中区串扰（点一个触发全部）。
+  // 改用 Button + 每卡独立的 navigationDestination/observable：destination 固定、无共享 state、无竞态。
+  const presented = useObservable(false)
   return (
-    <Button action={() => onSelect(entry)} buttonStyle="plain">
+    <Button
+      action={() => presented.setValue(true)}
+      buttonStyle="plain"
+      navigationDestination={{ isPresented: presented, content: entry.destination }}
+    >
       <HStack
         spacing={10}
         padding={{ horizontal: 12, vertical: 13 }}
@@ -97,7 +104,7 @@ function QuickEntryCard({ entry, onSelect }: { entry: QuickEntry; onSelect: (ent
   )
 }
 
-export function QuickEntryGrid({ entries, onSelect }: { entries: QuickEntry[]; onSelect: (entry: QuickEntry) => void }) {
+export function QuickEntryGrid({ entries }: { entries: QuickEntry[] }) {
   return (
     <LazyVGrid
       columns={[
@@ -106,7 +113,7 @@ export function QuickEntryGrid({ entries, onSelect }: { entries: QuickEntry[]; o
       ]}
       spacing={10}
     >
-      {entries.map(e => <QuickEntryCard key={e.key} entry={e} onSelect={onSelect} />)}
+      {entries.map(e => <QuickEntryCard key={e.key} entry={e} />)}
     </LazyVGrid>
   )
 }
@@ -388,7 +395,7 @@ export function HorizontalCardRail({ children }: { children: (JSX.Element | null
 
 // ---- 艺人圆形卡 ----
 
-export function ArtistCircleCard({ artist, count, onTap }: { artist: string, count: number, onTap: () => void }) {
+export function ArtistCircleCard({ artist, count, destination }: { artist: string, count: number, destination: JSX.Element }) {
   const [thumb, setThumb] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -403,7 +410,7 @@ export function ArtistCircleCard({ artist, count, onTap }: { artist: string, cou
   const DIAM = 118
   const hasThumb = thumb && !failed
   return (
-    <Button action={onTap} buttonStyle="plain">
+    <NavigationLink destination={destination}>
       <VStack spacing={7} frame={{ width: DIAM }}>
         {hasThumb ? (
           <Image
@@ -422,13 +429,13 @@ export function ArtistCircleCard({ artist, count, onTap }: { artist: string, cou
         <Text font="subheadline" fontWeight="semibold" lineLimit={1} multilineTextAlignment="center" frame={{ width: DIAM }}>{artist}</Text>
         <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>{`${count} 首`}</Text>
       </VStack>
-    </Button>
+    </NavigationLink>
   )
 }
 
 // ---- 专辑封面卡 ----
 
-export function AlbumCoverCard({ album, artist, musics, onTap }: { album: string, artist: string, musics: Music[], onTap: () => void }) {
+export function AlbumCoverCard({ album, artist, musics, destination }: { album: string, artist: string, musics: Music[], destination: JSX.Element }) {
   const localCover = musics.find(m => m.cover_url)?.cover_url ?? null
   const [thumb, setThumb] = useState<string | null>(localCover)
   const [failed, setFailed] = useState(false)
@@ -445,7 +452,7 @@ export function AlbumCoverCard({ album, artist, musics, onTap }: { album: string
   const clip = { type: "rect", cornerRadius: 14 } as any
   const hasThumb = thumb && !failed
   return (
-    <Button action={onTap} buttonStyle="plain">
+    <NavigationLink destination={destination}>
       <VStack alignment="leading" spacing={6} frame={{ width: SIZE }}>
         {hasThumb ? (
           <Image
@@ -464,21 +471,21 @@ export function AlbumCoverCard({ album, artist, musics, onTap }: { album: string
         <Text font="subheadline" fontWeight="semibold" lineLimit={1} frame={{ width: SIZE }}>{album}</Text>
         <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1} frame={{ width: SIZE }}>{artist}</Text>
       </VStack>
-    </Button>
+    </NavigationLink>
   )
 }
 
 // ---- 播放列表拼图卡 ----
 
-export function PlaylistCollageCard({ playlist, musics, onTap }: { playlist: Playlist, musics: Music[], onTap: () => void }) {
+export function PlaylistCollageCard({ playlist, musics, destination }: { playlist: Playlist, musics: Music[], destination: JSX.Element }) {
   const SIZE = 130
   return (
-    <Button action={onTap} buttonStyle="plain">
+    <NavigationLink destination={destination}>
       <VStack alignment="leading" spacing={6} frame={{ width: SIZE }}>
         <CoverCollage musics={musics} size={SIZE} cornerRadius={14} />
         <Text font="subheadline" fontWeight="semibold" lineLimit={1} frame={{ width: SIZE }}>{playlist.name}</Text>
         <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>{`${playlist.music_count} 首`}</Text>
       </VStack>
-    </Button>
+    </NavigationLink>
   )
 }

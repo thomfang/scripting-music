@@ -31,6 +31,9 @@
   - `efd17fc1` 发现页推荐卡加 contextMenu（试听/完整播放/下载/加歌单 + 解析中角标）
   - `c003ef44` 播放列表列表页重设计：新建/导入收进右上角 + 菜单，加空态
   - `c89e33e2` 播放页对抗性修复：play_count 去重计数 + 切歌竞态 playToken + 歌词在线落地 + LRU + shuffle 历史栈
+  - `6708a6f0` fix: playNext/addToQueue 队列变更后重置 shuffle 历史
+  - (待提交) 资料库首页导航竞态修复：卡片墙改声明式 NavigationLink；快捷宫格(LazyVGrid)用 Button+每卡独立 navigationDestination
+  - `c89e33e2` 播放页对抗性修复：play_count 去重计数 + 切歌竞态 playToken + 歌词在线落地 + LRU + shuffle 历史栈
 
 ## 音源架构
 
@@ -117,7 +120,10 @@
 - `ArtistDetail`/`AlbumDetail` 已 `export`，供首页卡片编程式 push。
 - 顾层页 `navigationTitle`/`toolbar` 由框架自动注入组件根视图；组件不要手动消费重渲染，否则退出按钮重复。
 - `LazyVGrid` columns 的 `size` 必填；`Label badge={n}` 在行尾 chevron 左侧，`badge=0` 自动隐藏。
-- List row 内多 `NavigationLink` 命中区串扰；首页卡片/宫格用 Button + `navTarget`/`navigationDestination` 编程式 push。
+- 导航坑（**2026-06-30 修正，重要**）：
+  - **LazyVGrid 内**多 NavigationLink 会命中区串扰（点一个触发全部）→ 必须用 `Button + 每项独立 navigationDestination/useObservable`（每卡一个 observable，content 固定）。
+  - **普通横向/竖向列表**（非 LazyVGrid，如横向卡片墙）直接用声明式 `NavigationLink destination=`，每项独立、正常。
+  - **禁止**用「单一共享 `navTarget` state + 一个 navigationDestination + pushDetail(setNavTarget+observable.setValue)」的编程式方案：`setNavTarget`(useState 异步) 与 `observable.setValue`(同步触发 push) 存在时序竞态，push 时 navTarget 还是上一次值 → 详情页永远显示上一个/第一个。资料库首页专辑卡曾因此 bug。
 - 收藏区 fallback：（已废弃）原「最爱/常听」回退逻辑随 C 段改为「最近播放」后不再使用。
 
 ## 艺人列表/详情页

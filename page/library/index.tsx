@@ -1,7 +1,7 @@
 import {
   Button, ContentUnavailableView, HStack, Image, Label, List, Menu,
   NavigationLink, ProgressView, ScrollView, Section, Spacer, Toolbar,
-  ToolbarItem, useEffect, useObservable, useState,
+  ToolbarItem, useEffect, useState,
 } from "scripting"
 import { database, Music, Playlist } from "../../class/database"
 import { player } from "../../class/player"
@@ -53,19 +53,6 @@ export function LibraryView() {
   const [data, setData] = useState<LibraryData | null>(null)
   const [loading, setLoading] = useState(true)
   const playerState = usePlayerState()
-
-  // 编程式导航：LazyVGrid 嵌在 List row 里多个 NavigationLink 会命中区串扰，
-  // 改用 Button + navigationDestination(Observable 控制 push) 避免冲突。
-  const navPresented = useObservable(false)
-  const [navTarget, setNavTarget] = useState<JSX.Element | null>(null)
-  const onSelectEntry = (entry: QuickEntry) => {
-    setNavTarget(entry.destination)
-    navPresented.setValue(true)
-  }
-  const pushDetail = (el: JSX.Element) => {
-    setNavTarget(el)
-    navPresented.setValue(true)
-  }
 
   useEffect(() => { load() }, [])
 
@@ -179,14 +166,10 @@ export function LibraryView() {
   return (
     <List
       toolbar={toolbarEl}
-      navigationDestination={navTarget != null ? {
-        isPresented: navPresented,
-        content: navTarget,
-      } : undefined}
     >
       {/* A — 快捷入口宫格 */}
       <Section listRowInsets={{ horizontal: 16, vertical: 6 } as any} listRowSeparator="hidden">
-        <QuickEntryGrid entries={quickEntries} onSelect={onSelectEntry} />
+        <QuickEntryGrid entries={quickEntries} />
       </Section>
 
       {/* B — 最近添加 */}
@@ -236,7 +219,7 @@ export function LibraryView() {
                   key={c.artist}
                   artist={c.artist}
                   count={c.count}
-                  onTap={() => pushDetail(<ArtistDetail artist={c.artist} musics={c.musics} />)}
+                  destination={<ArtistDetail artist={c.artist} musics={c.musics} />}
                 />
               ))}
             </HStack>
@@ -264,7 +247,7 @@ export function LibraryView() {
                   album={c.album}
                   artist={c.artist}
                   musics={c.musics}
-                  onTap={() => pushDetail(<AlbumDetail album={c.album} artist={c.artist} musics={c.musics} />)}
+                  destination={<AlbumDetail album={c.album} artist={c.artist} musics={c.musics} />}
                 />
               ))}
             </HStack>
@@ -291,7 +274,7 @@ export function LibraryView() {
                   key={c.playlist.id}
                   playlist={c.playlist}
                   musics={c.musics}
-                  onTap={() => pushDetail(<PlaylistDetailPage playlistId={c.playlist.id} onDeleted={load} />)}
+                  destination={<PlaylistDetailPage playlistId={c.playlist.id} onDeleted={load} />}
                 />
               ))}
             </HStack>
