@@ -33,6 +33,7 @@
   - `c89e33e2` 播放页对抗性修复：play_count 去重计数 + 切歌竞态 playToken + 歌词在线落地 + LRU + shuffle 历史栈
   - `6708a6f0` fix: playNext/addToQueue 队列变更后重置 shuffle 历史
   - `8d276e03` 资料库首页导航竞态修复：卡片墙改声明式 NavigationLink；快捷宫格(LazyVGrid)用 Button+每卡独立 navigationDestination
+  - `3da93621` 播放页点艺人/专辑跳详情页（嵌套 sheet+NavigationStack）+ 搜索页新增艺人/专辑模式；抽共享行组件 rows.tsx、搜索占位/结果区组件
   - `c89e33e2` 播放页对抗性修复：play_count 去重计数 + 切歌竞态 playToken + 歌词在线落地 + LRU + shuffle 历史栈
 
 ## 音源架构
@@ -126,6 +127,14 @@
   - **禁止**用「单一共享 `navTarget` state + 一个 navigationDestination + pushDetail(setNavTarget+observable.setValue)」的编程式方案：`setNavTarget`(useState 异步) 与 `observable.setValue`(同步触发 push) 存在时序竞态，push 时 navTarget 还是上一次值 → 详情页永远显示上一个/第一个。资料库首页专辑卡曾因此 bug。
 - 收藏区 fallback：（已废弃）原「最爱/常听」回退逻辑随 C 段改为「最近播放」后不再使用。
 
+## 播放页艺人/专辑跳转 + 搜索页艺人/专辑模式（`3da93621`）
+
+- **入口**：播放页 `title.tsx` 艺人名/专辑名可点（占位「未知艺术家/未知专辑」不可点）；搜索页 Picker 新增「艺人」「专辑」两段。
+- **播放页跳转架构**：`PlayerView` 由 TabView.sheet 弹出、**不在 NavigationStack 内**，故详情页须用「嵌套 sheet + sheet 内自带 NavigationStack」。封装在 `page/player/entity_sheet.tsx`（`PlayerArtistSheet`/`PlayerAlbumSheet`：实时 `getMusicBy*` 取库内该艺人/专辑歌曲 → loading/空态 → NavigationStack 包 `ArtistDetail`/`AlbumDetail`）。`index.tsx` 用 `entityNav` state + 根 ZStack `.sheet`（content 由 state 求值，**无命令式 push 竞态**）。
+- **详情页 onClose**：`ArtistDetail`/`AlbumDetail` 加可选 `onClose?`，sheet 场景下 toolbar 左侧渲染「关闭」（`!isEditing && onClose`）；NavigationLink push 场景不传，保留系统返回键。
+- **模块化**：艺人/专辑列表行抽到 `page/library/rows.tsx`（`ArtistRow`/`AlbumRow`），资料库列表页与搜索结果区共用（删除原私有 `ArtistRowContent`/`AlbumRowContent`）。搜索页拆 `components/entity_results.tsx`（`ArtistResultsSection`/`AlbumResultsSection`，普通列表声明式 NavigationLink）、`components/search_placeholder.tsx`（searching/error/empty 占位收敛）。
+- **搜索逻辑**：`SearchMode=online|local|artist|album`；`doArtistSearch`/`doAlbumSearch` 走 `database.getMusicByArtist/getMusicByAlbum` 过滤；`showEmpty`/`has*Results` 覆盖四模式。
+
 ## 艺人列表/详情页
 
 ### 数据源
@@ -184,3 +193,4 @@
 - `mydocs/specs/2026-06-30_00-55_ArtistImageDetail.md`
 - `mydocs/specs/2026-06-30_09-35_AlbumImageDetail.md`
 - `mydocs/specs/2026-06-30_09-50_LibraryCardsRedesign.md`
+- `mydocs/specs/2026-06-30_23-56_PlayerEntityNav_SearchEntityModes.md`
