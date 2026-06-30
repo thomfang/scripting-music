@@ -36,12 +36,59 @@ export const CHART_GENRES: readonly ChartGenre[] = [
   { id: 14, key: "pop", label: "流行", emoji: "🎧" },
 ] as const
 
-/** 「为你推荐」种子艺人（用户口味）。artistId 为已知值，缺则运行时 Search 解析。 */
+/**
+ * 「为你推荐」默认种子艺人池（用户口味：欧美另类/独立）。
+ * 库为空或偏好不足时，从此池按「当天 seed」随机抽取，而非固定头几个，
+ * 以保证推荐会轮换。artistId 为已知值，缺则运行时 Search 解析。
+ */
 export const SEED_ARTISTS: readonly { name: string; artistId?: number }[] = [
   { name: "Radiohead", artistId: 657515 },
   { name: "Novo Amor" },
   { name: "Cigarettes After Sex" },
+  { name: "Bon Iver" },
+  { name: "The National" },
+  { name: "Sufjan Stevens" },
+  { name: "Beach House" },
+  { name: "Fleet Foxes" },
+  { name: "The xx" },
+  { name: "Phoebe Bridgers" },
+  { name: "Alvvays" },
+  { name: "Slowdive" },
 ]
+
+// ---- 确定性随机工具（供「按天 seed」轮换推荐用） ----
+
+/** 字符串 → uint32 哈希（FNV-1a 变体），用于把 dayKey/库指纹折叠成种子。 */
+export function hashStr(s: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return h >>> 0
+}
+
+/** mulberry32 确定性 PRNG：同一 seed 必产同一序列。返回 [0,1) 取数函数。 */
+export function mulberry32(seed: number): () => number {
+  let a = seed >>> 0
+  return function () {
+    a |= 0
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/** 用给定 PRNG 对数组做 Fisher–Yates 洗牌（返回新数组，不改原数组）。 */
+export function shuffleWith<T>(arr: readonly T[], rand: () => number): T[] {
+  const out = arr.slice()
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
 
 export type ChartTrack = {
   /** 统一 id：itp:<trackId>，避免与 mp3juice id 冲突 */
@@ -129,8 +176,8 @@ const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/6
 /** “新歌”门槛：只保留近 N 个月内发行的曲目（跨流派拉 topsongs 后过滤）。 */
 const NEW_SONG_MAX_AGE_MONTHS = 9
 const NEW_SONG_MAX_AGE_MS = NEW_SONG_MAX_AGE_MONTHS * 30 * 24 * 3600 * 1000
-/** 新歌池取样的流派（口味向：另类/唱作人/电子/摇滚/流行）。 */
-const NEW_SONG_GENRES = [20, 10, 7, 21, 14]
+/** 新歌池取样的流派（口味向：另类/唱作人/电子/摇滚/流行）。也供推荐随机流派源复用。 */
+export const NEW_SONG_GENRES = [20, 10, 7, 21, 14]
 
 /** 升级 artworkUrl100 为 600x600。 */
 function upgradeArtwork(url: string): string {
@@ -267,7 +314,7 @@ class ChartsSource {
    */
   async fetchArtistTop(
     artist: { name: string; artistId?: number },
-    limit = 12,
+    limit = 25,
     country = "us"
   ): Promise<ChartTrack[]> {
     const cacheKey = `${country}:artist:${artist.name}:${limit}`
