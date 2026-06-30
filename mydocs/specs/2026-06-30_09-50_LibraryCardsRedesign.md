@@ -119,3 +119,8 @@
 
 ### 踩坑
 - 拼图 banner 背景需填满屏宽：用 `CoverCollage size={Device.screen.width}` + 外层 `ZStack frame maxWidth:infinity height:300 clipped` 裁出，不用固定 300 方图（否则两侧留白）。
+
+### 跟进调整（2026-06-30 10:45，用户反馈去重）
+- 底部 C 段「最爱歌曲」与顶部宫格「我喜欢」同维度重复 → C 段改为 **最近播放**（`last_played_at` 倒序，seeAll → RecentlyPlayedView）。
+- 为避免与 C 段再重复，顶部宫格「最近播放」→ **最常播放**（`flame.fill`，play_count，TopPlayedView）。最终维度无重复：歌曲/我喜欢/已下载/最常播放（宫格）+ 最近播放（底部行）。
+- `LibraryData` 移除 `favoriteRows`/`favByPlayCount`，新增 `recentlyPlayedRows`。

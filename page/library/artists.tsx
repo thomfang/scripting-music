@@ -330,9 +330,9 @@ function ArtistHeader({ artist }: { artist: string }) {
           foreground
         )}
 
-        {info.biography && (
+        {!!info.biography && (
           <Button action={() => setExpanded(e => !e)} buttonStyle="plain">
-            <VStack alignment="leading" spacing={6} padding={{ horizontal: 16, top: 14, bottom: 16 }} frame={{ maxWidth: "infinity" }} contentShape="rect">
+            <VStack alignment="leading" spacing={6} padding={{ horizontal: 16, top: 14, bottom: 16 }} contentShape="rect">
               <Text font="body" foregroundStyle="secondaryLabel" lineLimit={expanded ? undefined : 3}>{info.biography}</Text>
               <HStack spacing={3}>
                 <Text font="caption" fontWeight="semibold" foregroundStyle="systemPink">{expanded ? "收起" : "展开"}</Text>

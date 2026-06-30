@@ -33,8 +33,7 @@ type LibraryData = {
   all: Music[]
   favorites: Music[]
   recentlyAdded: Music[]
-  favoriteRows: Music[]
-  favByPlayCount: boolean
+  recentlyPlayedRows: Music[]
   downloadedCount: number
   recentlyPlayedCount: number
   topPlayedCount: number
@@ -84,17 +83,11 @@ export function LibraryView() {
       // 最近添加 = getAllMusic 已按 added_at DESC，取前 N
       const recentlyAdded = all.slice(0, RECENT_LIMIT)
 
-      // 最爱歌曲：有收藏 → 收藏优先，不足 FAVORITE_LIMIT 用 play_count Top 补足（合并，不替换）；
-      // 完全没有收藏 → 退化为「常听歌曲」（play_count Top）。
-      const favSet = new Set(favorites.map(m => m.id))
-      const hasFavorites = favorites.length > 0
-      const topPlayed = [...all]
-        .filter(m => m.play_count > 0)
-        .sort((a, b) => b.play_count - a.play_count)
-      const favByPlayCount = !hasFavorites
-      const favoriteRows = hasFavorites
-        ? [...favorites, ...topPlayed.filter(m => !favSet.has(m.id))].slice(0, FAVORITE_LIMIT)
-        : topPlayed.slice(0, FAVORITE_LIMIT)
+      // 最近播放：有 last_played_at 的按时间倒序取前 N（与顶部「最常播放」频次维度区分）。
+      const recentlyPlayedRows = [...all]
+        .filter(m => m.last_played_at)
+        .sort((a, b) => (b.last_played_at ?? 0) - (a.last_played_at ?? 0))
+        .slice(0, FAVORITE_LIMIT)
 
       const downloadedCount = all.filter(m => m.is_downloaded).length
       const recentlyPlayedCount = all.filter(m => m.last_played_at).length
@@ -110,10 +103,10 @@ export function LibraryView() {
         })
       )
 
-      // 本地封面存在性（卡片墙 + 最爱行 + 拼图涉及的曲目）
+      // 本地封面存在性（卡片墙 + 最近播放行 + 拼图涉及的曲目）
       const coverTargets = new Map<string, Music>()
       for (const m of recentlyAdded) coverTargets.set(m.id, m)
-      for (const m of favoriteRows) coverTargets.set(m.id, m)
+      for (const m of recentlyPlayedRows) coverTargets.set(m.id, m)
       for (const c of albumCards) if (c.musics[0]) coverTargets.set(c.musics[0].id, c.musics[0])
       for (const c of playlistCards) for (const m of c.musics) coverTargets.set(m.id, m)
       const coverExists: Record<string, boolean> = {}
@@ -122,7 +115,7 @@ export function LibraryView() {
       }))
 
       setData({
-        all, favorites, recentlyAdded, favoriteRows, favByPlayCount,
+        all, favorites, recentlyAdded, recentlyPlayedRows,
         downloadedCount, recentlyPlayedCount, topPlayedCount,
         playlistCount: playlists.length,
         artistCount: artists.length,
@@ -157,7 +150,7 @@ export function LibraryView() {
     { key: "songs", label: "歌曲", icon: "music.note", color: "systemBlue", count: data.all.length, destination: <AllSongsView /> },
     { key: "favorites", label: "我喜欢", icon: "heart.fill", color: "systemPink", count: data.favorites.length, destination: <FavoritesView /> },
     { key: "downloaded", label: "已下载", icon: "arrow.down.circle.fill", color: "systemGreen", count: data.downloadedCount, destination: <DownloadView /> },
-    { key: "recent", label: "最近播放", icon: "clock.fill", color: "systemOrange", count: data.recentlyPlayedCount, destination: <RecentlyPlayedView /> },
+    { key: "top", label: "最常播放", icon: "flame.fill", color: "systemOrange", count: data.topPlayedCount, destination: <TopPlayedView /> },
   ] : []
 
   const toolbarEl = (
@@ -306,26 +299,26 @@ export function LibraryView() {
         </Section>
       )}
 
-      {/* C — 最爱歌曲 */}
-      {data && data.favoriteRows.length > 0 && (
+      {/* C — 最近播放 */}
+      {data && data.recentlyPlayedRows.length > 0 && (
         <Section
           header={
             <LibrarySectionHeader
-              icon={data.favByPlayCount ? "flame.fill" : "heart.fill"}
-              title={data.favByPlayCount ? "常听歌曲" : "最爱歌曲"}
-              seeAllDestination={data.favByPlayCount ? <TopPlayedView /> : <FavoritesView />}
+              icon="clock.arrow.circlepath"
+              title="最近播放"
+              seeAllDestination={<RecentlyPlayedView />}
             />
           }
         >
-          {data.favoriteRows.map((m, idx) => (
+          {data.recentlyPlayedRows.map((m, idx) => (
             <FavoriteSongRow
               key={m.id}
               music={m}
               rank={idx + 1}
               coverExists={data.coverExists[m.id] === true}
               isPlaying={playerState.currentMusic?.id === m.id}
-              showPlayCount={data.favByPlayCount}
-              onTap={() => playFromList(data.favoriteRows, m)}
+              showPlayCount={false}
+              onTap={() => playFromList(data.recentlyPlayedRows, m)}
             />
           ))}
         </Section>
