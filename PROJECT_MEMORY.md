@@ -34,7 +34,7 @@
   - `6708a6f0` fix: playNext/addToQueue 队列变更后重置 shuffle 历史
   - `8d276e03` 资料库首页导航竞态修复：卡片墙改声明式 NavigationLink；快捷宫格(LazyVGrid)用 Button+每卡独立 navigationDestination
   - `3da93621` 播放页点艺人/专辑跳详情页（嵌套 sheet+NavigationStack）+ 搜索页新增艺人/专辑模式；抽共享行组件 rows.tsx、搜索占位/结果区组件
-  - `<pending>` 搜索页艺人/专辑改走在线 iTunes（itunes_browse.ts + online_detail.tsx）+ 播放页详情 sheet 补 tint=systemPink
+  - `de891b4b` 搜索页艺人/专辑改走在线 iTunes（itunes_browse.ts + online_detail.tsx）+ 播放页详情 sheet 补 tint=systemPink
   - `c89e33e2` 播放页对抗性修复：play_count 去重计数 + 切歌竞态 playToken + 歌词在线落地 + LRU + shuffle 历史栈
 
 ## 音源架构
