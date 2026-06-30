@@ -8,14 +8,37 @@ const DEFAULT_LYRIC_HEIGHT = 150
 // 高亮前导补偿（秒）：让歌词行比音频略早亮一点，抵消渲染/感知延迟。
 const LYRIC_LEAD = 0.2
 // 模块级歌词内存缓存：跨「Lyric 因 key 重挂载」存活，为同一首歌重开播放页时避免闪「加载」、不重复请求。
+// 加 LRU 上限，避免长会话无限累积。
+const LYRIC_MEM_CACHE_MAX = 60
 const lyricMemCache = new Map<string, LyricsResult>()
+
+function lyricCacheGet(id: string): LyricsResult | undefined {
+  const v = lyricMemCache.get(id)
+  if (v !== undefined) {
+    // 命中提升新近度：删后重插到末尾
+    lyricMemCache.delete(id)
+    lyricMemCache.set(id, v)
+  }
+  return v
+}
+
+function lyricCacheSet(id: string, data: LyricsResult): void {
+  if (lyricMemCache.has(id)) lyricMemCache.delete(id)
+  lyricMemCache.set(id, data)
+  // 超限 → 删除最早插入的 key（Map 迭代序即插入序）
+  while (lyricMemCache.size > LYRIC_MEM_CACHE_MAX) {
+    const oldest = lyricMemCache.keys().next().value
+    if (oldest === undefined) break
+    lyricMemCache.delete(oldest)
+  }
+}
 
 export function Lyric({ height = DEFAULT_LYRIC_HEIGHT, onToggle, animation }: { height?: number; onToggle?: () => void; animation?: any }) {
   const { currentMusic, isPlaying } = usePlayerState()
   const { currentTime: progressTime } = usePlayerProgress()
   // 同一首歌重挂载时，用内存缓存同步初始化 → 不闪「加载歌词…」。
   const [result, setResult] = useState<LyricsResult | null>(
-    () => (currentMusic ? lyricMemCache.get(currentMusic.id) ?? null : null)
+    () => (currentMusic ? lyricCacheGet(currentMusic.id) ?? null : null)
   )
   const [loading, setLoading] = useState(false)
   // 独立高频计时：进度 Provider 只 1s 一跳，会让歌词高亮最多滞后近 1 秒；
@@ -37,16 +60,16 @@ export function Lyric({ height = DEFAULT_LYRIC_HEIGHT, onToggle, animation }: { 
     if (!currentMusic) { setResult(null); return }
     const musicId = currentMusic.id
     // 内存缓存命中：直接用，不走 loading / 不请求
-    const cached = lyricMemCache.get(musicId)
+    const cached = lyricCacheGet(musicId)
     if (cached) { setResult(cached); return }
     setResult(null)
     setLoading(true)
     ;(async () => {
       try {
-        // 本地优先：已下载的歌曲歌词与封面同生命周期存于本地
+        // 本地优先：已下载（或之前在线命中已落地）的歌词存于本地
         const local = await fileManager.readLyrics<LyricsResult>(musicId)
         if (local && (local.synced?.length || local.plain)) {
-          lyricMemCache.set(musicId, local)
+          lyricCacheSet(musicId, local)
           if (alive) setResult(local)
           return
         }
@@ -57,7 +80,12 @@ export function Lyric({ height = DEFAULT_LYRIC_HEIGHT, onToggle, animation }: { 
           album: currentMusic.album,
           duration: currentMusic.duration,
         })
-        lyricMemCache.set(musicId, r)
+        lyricCacheSet(musicId, r)
+        // 在线命中（有 synced 或 plain）则落地本地，下次优先读本地、不再请求服务器。
+        // 空结果不写，避免把「暂无歌词」固化、阻断后续重试。
+        if (r.synced?.length || r.plain) {
+          fileManager.saveLyrics(musicId, r).catch(e => console.error("[歌词] 落地失败:", e))
+        }
         if (alive) setResult(r)
       } catch (e) {
         console.error("[歌词] 获取失败:", e)

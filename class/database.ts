@@ -361,6 +361,18 @@ class Database {
     )
   }
 
+  /**
+   * 仅更新「最近播放时间」，不动 play_count。
+   * 用于开始播放时立即刷新最近播放顺序；真正计数（播达 80%）由 updateMusicPlayCount 唯一负责。
+   */
+  async touchLastPlayed(id: string): Promise<void> {
+    if (!this.db) throw new Error("Database not initialized")
+    await this.db.execute(
+      "UPDATE music SET last_played_at = ? WHERE id = ?",
+      [Date.now(), id]
+    )
+  }
+
   async toggleFavorite(id: string): Promise<boolean> {
     if (!this.db) throw new Error("Database not initialized")
     const music = await this.getMusic(id)

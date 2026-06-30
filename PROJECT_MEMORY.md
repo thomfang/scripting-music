@@ -71,7 +71,7 @@
 - `class/file_manager.ts`：`lyricsDir(<root>/lyrics)`、`getLyricsPath(<id>.json)`、`saveLyrics`、`readLyrics<T>`、`lyricsExists`、`deleteLyrics`；init 建目录；`getStorageSize` 计入。
 - `fetch_downloader.ts`：下载成功后 `lyrics.fetchLyrics` + `saveLyrics`，失败静默；`deleteDownload` 删除歌词。
 - `database.deleteMusic`：已下载分支删除歌词。
-- `page/player/lyric.tsx`：本地优先 `readLyrics` → 在线 LRCLIB 兜底；模块级 `lyricMemCache = Map<id,LyricsResult>`，避免重挂载闪 loading/重复拉取。
+- `page/player/lyric.tsx`：本地优先 `readLyrics` → 在线 LRCLIB 兜底；模块级 `lyricMemCache`（LRU 上限 60，`lyricCacheGet/Set`）避免重挂载闪 loading/重复拉取。**在线命中（synced/plain 非空）会 `saveLyrics` 落地本地**（未下载的流播歌也能二次秒进）；空结果不写。
 - LRCLIB：`/api/get` → `/api/search` + `pickBest`；30min 内存缓存；`parseLrc` 去 `[ar:]` 等 metadata。
 - 同步精度：不要依赖 `player_state` 1s tick；歌词高亮独立 250ms `setInterval(()=>player.getCurrentTime())`，`LYRIC_LEAD=0.2s` 前导补偿。
 
@@ -85,6 +85,12 @@
 - 横向溢出核心坑：sheet/父视图可能给无限宽，`maxWidth:"infinity"` 不能限制到屏宽；长歌词会撑爆。需显式有限 `width`。
 - 播放页最终用 `Device.screen.width - 48` 收窄根 VStack，保证左右 24pt；不要「先 frame 全屏再外侧 padding」，会被裁。
 - 展开歌词：`lyricExpanded` 时小封面 56pt 收到歌名左侧，Title `compact`；未展开大封面在上。
+
+### 播放器核心逻辑（`class/player.ts`，2026-06-30 对抗性修复）
+
+- **play_count 计数唯一化**：`playMusic` 开始播放只调 `database.touchLastPlayed`（仅更 last_played_at）；`play_count+1` 只由 `checkPlayCompletion` 在 ≥80% 时一次（`hasCountedPlay` 守卫）。**不要在 playMusic 里 +1**（会导致双计数，污染最常播放/推荐权重）。
+- **切歌竞态**：`playToken`，playMusic 进入 `++this.playToken`，每个 await（findAudioPath/resolveAudioUrl）后 `if(token!==this.playToken)return`，丢弃过期解析，避免「画面新歌、声音旧歌」。
+- **shuffle 历史栈**：`shuffleHistory`(访问序)/`shuffleForward`(redo)。`nextShuffleIndex` 优先 forward.pop，否则在未播过且非当前首中随机（一轮播完重置）；`prevShuffleIndex` 从 history.pop 回真正上一首。`setQueue`/`setPlayMode`(变更时) 调 `resetShuffleHistory`。
 
 ## 发现 Tab
 

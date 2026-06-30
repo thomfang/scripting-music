@@ -27,6 +27,11 @@ class Player {
   private isTimerRunning: boolean = false
   private hasCountedPlay: boolean = false
   private initialized: boolean = false
+  // 切歌竞态令牌：playMusic 进入自增，每个 await 后校验，丢弃过期解析。
+  private playToken: number = 0
+  // shuffle 历史栈：记已播 index 访问序，previous 回退、next 优先 redo。
+  private shuffleHistory: number[] = []
+  private shuffleForward: number[] = []
 
   private static readonly STORAGE_QUEUE_KEY = "player_queue"
   private static readonly STORAGE_INDEX_KEY = "player_index"
@@ -163,6 +168,7 @@ class Player {
   setQueue(queue: Music[], startIndex: number = 0): void {
     this.queue = queue
     this.currentIndex = startIndex
+    this.resetShuffleHistory()
     this.listeners.forEach(l => l.onQueueChange?.(queue))
     Storage.set(Player.STORAGE_QUEUE_KEY, queue)
     Storage.set(Player.STORAGE_INDEX_KEY, startIndex)
@@ -184,6 +190,8 @@ class Player {
   }
 
   setPlayMode(mode: PlayMode): void {
+    // 切入/切出 shuffle 都重置历史，避免旧 index 访问序失配。
+    if (mode !== this.playMode) this.resetShuffleHistory()
     this.playMode = mode
     Storage.set(Player.STORAGE_PLAY_MODE_KEY, mode)
     this.listeners.forEach(l => l.onPlayModeChange?.(mode))
@@ -248,6 +256,8 @@ class Player {
   }
 
   private async playMusic(music: Music): Promise<void> {
+    // 切歌令牌：本次调用的身份。每个 await 后校验，过期则静默丢弃（已有更新的 playMusic 接管）。
+    const token = ++this.playToken
     this.setState("loading")
     this.currentMusic = music
     this.hasCountedPlay = false
@@ -262,6 +272,7 @@ class Player {
 
     if (music.is_downloaded) {
       const localPath = await fileManager.findAudioPath(music.id)
+      if (token !== this.playToken) return // 已被新切歌接管
       const exists = localPath !== null
       console.log(`[Player] 本地路径: ${localPath}, 存在: ${exists}`)
       if (exists) {
@@ -283,9 +294,11 @@ class Player {
           } catch (e) {
             console.error(`[Player] 解析播放地址失败: ${e}`)
           }
+          if (token !== this.playToken) return // 解析返回前已切歌
         }
         
         if (!audioUrl) {
+          if (token !== this.playToken) return
           this.setState("error")
           this.currentMusic = null
           this.listeners.forEach(l => l.onMusicChange?.(null))
@@ -312,9 +325,11 @@ class Player {
         } catch (e) {
           console.error(`[Player] 解析播放地址失败: ${e}`)
         }
+        if (token !== this.playToken) return // 解析返回前已切歌，丢弃过期源
       }
       
       if (!audioUrl) {
+        if (token !== this.playToken) return
         this.setState("error")
         this.currentMusic = null
         this.listeners.forEach(l => l.onMusicChange?.(null))
@@ -323,6 +338,7 @@ class Player {
       }
     }
 
+    if (token !== this.playToken) return // setSource 前最终校验
     console.log(`[Player] setSource: ${audioUrl}, player实例: ${this.player !== null}`)
     const success = this.player?.setSource(audioUrl)
     console.log(`[Player] setSource result: ${success}, onReadyToPlay已注册: ${this.player?.onReadyToPlay !== undefined}`)
@@ -332,7 +348,8 @@ class Player {
       return
     }
 
-    await database.updateMusicPlayCount(music.id)
+    // 开始播放只刷新「最近播放」；真正计数（play_count+1）由 checkPlayCompletion 在 ≥80% 时唯一负责。
+    await database.touchLastPlayed(music.id)
   }
 
   private async playAtIndex(index: number): Promise<void> {
@@ -364,7 +381,7 @@ class Player {
   private getNextIndex(): number {
     if (this.queue.length === 0) return -1
     if (this.playMode === "shuffle") {
-      return Math.floor(Math.random() * this.queue.length)
+      return this.nextShuffleIndex()
     }
     const next = this.currentIndex + 1
     if (next < this.queue.length) return next
@@ -374,11 +391,56 @@ class Player {
   private getPreviousIndex(): number {
     if (this.queue.length === 0) return -1
     if (this.playMode === "shuffle") {
-      return Math.floor(Math.random() * this.queue.length)
+      return this.prevShuffleIndex()
     }
     const prev = this.currentIndex - 1
     if (prev >= 0) return prev
     return this.playMode === "repeat-all" ? this.queue.length - 1 : -1
+  }
+
+  /**
+   * shuffle 下一首：优先消费 forward（被 previous 回退后的 redo）；
+   * 否则在「本轮未播过且非当前首」的 index 中随机选，避免原地重播与一轮内重复。
+   * 一轮播完后重置历史（仅排除当前首）。调用会把当前 index 压入 history。
+   */
+  private nextShuffleIndex(): number {
+    const n = this.queue.length
+    if (n === 1) return 0
+    if (this.shuffleForward.length > 0) {
+      const idx = this.shuffleForward.pop()!
+      if (this.currentIndex >= 0) this.shuffleHistory.push(this.currentIndex)
+      return idx
+    }
+    const played = new Set(this.shuffleHistory)
+    let pool: number[] = []
+    for (let i = 0; i < n; i++) {
+      if (i === this.currentIndex) continue
+      if (!played.has(i)) pool.push(i)
+    }
+    // 一轮都播过了 → 重置，仅排除当前首
+    if (pool.length === 0) {
+      this.shuffleHistory = []
+      for (let i = 0; i < n; i++) if (i !== this.currentIndex) pool.push(i)
+    }
+    const idx = pool[Math.floor(Math.random() * pool.length)]
+    if (this.currentIndex >= 0) this.shuffleHistory.push(this.currentIndex)
+    return idx
+  }
+
+  /** shuffle 上一首：从 history 弹出真正的上一首；把当前首压入 forward 供 redo。无历史则保持当前。 */
+  private prevShuffleIndex(): number {
+    if (this.shuffleHistory.length > 0) {
+      const idx = this.shuffleHistory.pop()!
+      if (this.currentIndex >= 0) this.shuffleForward.push(this.currentIndex)
+      return idx
+    }
+    return -1
+  }
+
+  /** 重置 shuffle 历史（队列变更 / 切换播放模式时调用，避免 index 失配）。 */
+  private resetShuffleHistory(): void {
+    this.shuffleHistory = []
+    this.shuffleForward = []
   }
 
   private setState(state: PlayerState): void {
