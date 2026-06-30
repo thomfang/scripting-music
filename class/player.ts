@@ -176,13 +176,18 @@ class Player {
 
   addToQueue(music: Music): void {
     this.queue.push(music)
+    // 队列变更 → 重置 shuffle 历史，避免 index 访问序失配。
+    this.resetShuffleHistory()
     this.listeners.forEach(l => l.onQueueChange?.(this.queue))
+    Storage.set(Player.STORAGE_QUEUE_KEY, this.queue)
   }
 
   async playNext(music: Music): Promise<void> {
     const insertIndex = this.currentIndex < 0 ? 0 : this.currentIndex + 1
     this.queue.splice(insertIndex, 0, music)
     this.currentIndex = insertIndex
+    // splice 在中间插入会移位后续所有 index，shuffleHistory/forward 存的是裸 index 会错位，重置。
+    this.resetShuffleHistory()
     Storage.set(Player.STORAGE_QUEUE_KEY, this.queue)
     Storage.set(Player.STORAGE_INDEX_KEY, this.currentIndex)
     this.listeners.forEach(l => l.onQueueChange?.(this.queue))
