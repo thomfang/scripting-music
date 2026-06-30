@@ -23,6 +23,7 @@
   - `49bd7596` 资料库宫格导航点击冲突修复
   - `b9e459bb` 艺人列表头像 + 详情 header
   - `87241920` 艺人 banner header padding 修复
+  - `acf9107a` 专辑封面 + 专辑详情页 header（TheAudioDB album 源）
 
 ## 音源架构
 
@@ -125,6 +126,24 @@
 - banner 内 padding 修复 `87241920`：`foreground` VStack 不要同层 `padding + frame maxWidth:"infinity"`，会水平 padding 被裁；去掉 `frame`，让 ZStack 默认居中，banner 满宽由底层 Rectangle 撑。
 - 待办：用户反馈「简介展开后顶部一直多一截 padding」；静态 repro 未复现，需继续排查真实 state 切换/List row 高度重算。
 
+## 专辑列表/详情页
+
+### 数据源
+
+- TheAudioDB 专辑端点：`GET https://www.theaudiodb.com/api/v1/json/2/searchalbum.php?s=<artist>&a=<album>`，返回 `{album:[{...}|null]}` 取 `album[0]`。
+- 封面（`r2.theaudiodb.com`）：`strAlbumThumbHQ`（高清，部分才有）→ `strAlbumThumb`（方形）。
+- 简介 `strDescription`（英文）；**无 CN 字段**，部分专辑只有 FR/ES/PT/SE 或完全无。结构化：`intYearReleased`/`strGenre`/`strStyle`/`strLabel`/`strReleaseFormat`/`strMood`/`intScore`。
+- 华语/冷门专辑查无（实测「周杰伦/范特西」NO RESULT）→ 降级。
+
+### 实现
+
+- `class/sources/album_info.ts`：`albumInfo.fetch(artist, album)`，内存缓存 `Map<artist|album, AlbumInfo|null>` + inflight 去重；**双字段护栏**（artist+album 规整后相等/互包含）；8s 超时；查无/护栏不过缓存 null，网络失败不缓存；thumb=`strAlbumThumbHQ||strAlbumThumb`，description=`strDescription`。
+- `page/library/albums.tsx`：
+  - 列表行 `AlbumRowContent`：44pt 圆角方形封面，**先用本地 `musics.find(cover_url)` 兜底，再异步覆盖为远程封面**；onError/查无降级 `square.stack.fill`。
+  - 详情 `AlbumHeader`：同封面放大 `blur(28)` 模糊 banner + `BANNER_SCRIM` + 前景 150pt 圆角清晰封面 + 专辑名/艺人 + 年代/流派/厂牌 chips + 可展开英文简介；插在「播放全部/随机」前；编辑态隐藏；无内容返回空 `<Section/>`。
+- 方形圆角封面用 `clipShape={{type:"rect",cornerRadius}}`（艺人圆头像用 `capsule`）。
+- 决策：简介英文缺失则不显示（无 CN/不回退外语）；仅内存缓存元数据不落盘；`BANNER_SCRIM` 与艺人页同式（各文件本地声明一份）。
+
 ## 全局/常见 Scripting UI 坑（项目内复用）
 
 - modifier 顺序影响布局：`frame`、`padding`、`background`、`clipShape`、`buttonStyle`、`contentMargins` 等组合必须看顺序。
@@ -140,3 +159,4 @@
 - `mydocs/specs/2026-06-29_19-49_PlayerLyricOverflowFix.md`
 - `mydocs/specs/2026-06-29_22-55_LibraryRedesign.md`
 - `mydocs/specs/2026-06-30_00-55_ArtistImageDetail.md`
+- `mydocs/specs/2026-06-30_09-35_AlbumImageDetail.md`
