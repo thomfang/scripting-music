@@ -125,33 +125,36 @@ export function PlaylistsView() {
         onChanged: (v: boolean) => { if (!v) handleImportPickerDismiss() },
         content: <PlaylistPickerContent onSelect={handleMergeSelect} onDismiss={handleImportPickerDismiss} />
       }}
+      toolbar={
+        <Toolbar>
+          <ToolbarItem placement="topBarTrailing">
+            <Menu label={<Image systemName="plus" />}>
+              <Button title="新建播放列表" systemImage="plus.circle" action={createPlaylist} />
+              <Button title="导入歌单…" systemImage="square.and.arrow.down" action={importPlaylist} />
+            </Menu>
+          </ToolbarItem>
+        </Toolbar>
+      }
     >
-      <Button action={createPlaylist}>
-        <HStack spacing={12}>
-          <Image systemName="plus.circle.fill" font="title2" tint="accentColor" frame={{ width: 50, height: 50 }} />
-          <Text font="headline">新建播放列表</Text>
-        </HStack>
-      </Button>
-      <Button action={importPlaylist}>
-        <HStack spacing={12}>
-          <Image systemName="square.and.arrow.down" font="title2" tint="accentColor" frame={{ width: 50, height: 50 }} />
-          <VStack alignment="leading" spacing={2}>
-            <Text font="headline">导入歌单</Text>
-            <Text font="caption" foregroundStyle="secondaryLabel">从 .smpl.json 文件导入</Text>
-          </VStack>
-        </HStack>
-      </Button>
-      {playlists.value.map(playlist => (
-        <NavigationLink key={playlist.id} destination={<PlaylistDetail playlistId={playlist.id} onDeleted={loadPlaylists} />}>
-          <HStack spacing={12}>
-            <CoverCollage musics={collageMusics[playlist.id] ?? []} size={50} cornerRadius={9} shadow={false} />
-            <VStack alignment="leading" spacing={2}>
-              <Text font="headline">{playlist.name}</Text>
-              <Text font="subheadline" foregroundStyle="secondaryLabel">{playlist.music_count} 首歌曲</Text>
-            </VStack>
-          </HStack>
-        </NavigationLink>
-      ))}
+      {playlists.value.length === 0 ? (
+        <VStack spacing={14} padding={{ vertical: 60 }} frame={{ maxWidth: "infinity" }}>
+          <Image systemName="music.note.list" font={{ name: "system", size: 52 }} foregroundStyle="tertiaryLabel" />
+          <Text font="headline" foregroundStyle="secondaryLabel">还没有播放列表</Text>
+          <Text font="subheadline" foregroundStyle="tertiaryLabel">点右上角 + 新建或导入歌单</Text>
+        </VStack>
+      ) : (
+        playlists.value.map(playlist => (
+          <NavigationLink key={playlist.id} destination={<PlaylistDetail playlistId={playlist.id} onDeleted={loadPlaylists} />}>
+            <HStack spacing={12}>
+              <CoverCollage musics={collageMusics[playlist.id] ?? []} size={50} cornerRadius={9} shadow={false} />
+              <VStack alignment="leading" spacing={2}>
+                <Text font="headline">{playlist.name}</Text>
+                <Text font="subheadline" foregroundStyle="secondaryLabel">{playlist.music_count} 首歌曲</Text>
+              </VStack>
+            </HStack>
+          </NavigationLink>
+        ))
+      )}
     </List>
   )
 }
