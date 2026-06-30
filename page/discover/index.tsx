@@ -1,6 +1,7 @@
 import {
   useState,
   useEffect,
+  useRef,
   List,
   Section,
   FlowLayout,
@@ -29,6 +30,7 @@ const SELECTED_GENRE_KEY = "discover_selected_genre"
 // 推荐轮换缓存：当日结果 + 最近已推指纹
 const RECO_DAILY_KEY = "discover_reco_daily"
 const RECO_RECENT_KEY = "discover_reco_recent"
+const RECO_NONCE_KEY = "discover_reco_nonce"  // 手动刷新自增，叠加进 seed 旋转出新结果
 const RECO_RECENT_DAYS = 3       // 保留最近几天的「已推」指纹
 const RECO_TARGET = 24           // 推荐最终条数
 const RECO_PER_ARTIST_MAX = 3   // 每个艺人/源最多几首，避免扎堆
@@ -85,6 +87,9 @@ export function DiscoverView() {
   // 为你推荐（种子艺人热门曲，汇总）
   const [recommend, setRecommend] = useState<ChartTrack[] | null>(null)
   const [recoFromDownloads, setRecoFromDownloads] = useState(false)
+  const [recoLoading, setRecoLoading] = useState(false)
+  const recoMountedRef = useRef(true)
+  const recoInflightRef = useRef(false)
   const playerState = usePlayerState()
 
   useEffect(() => {
@@ -96,123 +101,138 @@ export function DiscoverView() {
   //   ② 各源拉大候选池，按「当天 seed」洗牌随机收敛；
   //   ③ 排除已下载 + 最近 N 天已推过的曲目；
   //   ④ 当日结果缓存：同一天复用、跨天重算（失败静默）。
+  //   手动刷新（force=true）：跳过当日缓存，叠加自增 nonce 旋转 seed，强制换一批。
   useEffect(() => {
-    let alive = true
-    ;(async () => {
-      const day = todayKey()
-      try {
-        // 0) 命中当日缓存 → 直接复用，不重算、不闪烁
+    recoMountedRef.current = true
+    loadRecommend(false)
+    return () => { recoMountedRef.current = false }
+  }, [])
+
+  async function loadRecommend(force: boolean) {
+    if (recoInflightRef.current) return
+    recoInflightRef.current = true
+    if (force) setRecoLoading(true)
+    const alive = () => recoMountedRef.current
+    const day = todayKey()
+    try {
+      // 0) 非强制且命中当日缓存 → 直接复用，不重算、不闪烁
+      if (!force) {
         const cached = Storage.get<RecoDaily>(RECO_DAILY_KEY)
         if (cached && cached.day === day && Array.isArray(cached.tracks) && cached.tracks.length > 0) {
-          if (alive) { setRecommend(cached.tracks); setRecoFromDownloads(true) }
+          if (alive()) { setRecommend(cached.tracks); setRecoFromDownloads(true) }
           return
         }
-
-        // 1) 加权统计艺人偏好 + 已下载指纹
-        let weighted: { name: string; artistId?: number }[] = []
-        const ownedKeys = new Set<string>()
-        try {
-          const [downloaded, favorites, recent] = await Promise.all([
-            database.getDownloadedMusic().catch(() => [] as Music[]),
-            database.getFavoriteMusic().catch(() => [] as Music[]),
-            database.getRecentlyPlayed(30).catch(() => [] as Music[]),
-          ])
-          const weights: { list: Music[]; w: number }[] = [
-            { list: downloaded, w: 3 },
-            { list: favorites, w: 2 },
-            { list: recent, w: 1 },
-          ]
-          const counter = new Map<string, number>()
-          for (const { list, w } of weights) {
-            for (const m of list) {
-              const name = (m.artist || "").trim()
-              if (name && name !== "未知艺术家") counter.set(name, (counter.get(name) ?? 0) + w)
-            }
-          }
-          for (const m of downloaded) ownedKeys.add(trackKey(m.title, m.artist))
-          weighted = [...counter.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name]) => ({ name }))
-        } catch (e) {
-          console.error("[发现] 读偏好数据失败:", e)
-        }
-
-        // 2) 按天 seed（叠加库指纹，让不同用户/库也有差异）构造 PRNG
-        const libSig = weighted.map(s => s.name).join(",")
-        const seed = hashStr(`${day}|${libSig}`)
-        const rand = mulberry32(seed)
-
-        // 3) 选种子艺人：加权候选洗牌取前若干 + 默认池洗牌补齐到 ~4 个
-        const picked: { name: string; artistId?: number }[] = []
-        const have = new Set<string>()
-        const pushSeed = (a: { name: string; artistId?: number }) => {
-          const k = a.name.toLowerCase()
-          if (have.has(k)) return
-          have.add(k); picked.push(a)
-        }
-        for (const a of shuffleWith(weighted, rand).slice(0, 3)) pushSeed(a)
-        if (picked.length > 0) { if (alive) setRecoFromDownloads(true) }
-        for (const a of shuffleWith(SEED_ARTISTS, rand)) {
-          if (picked.length >= 4) break
-          pushSeed(a)
-        }
-
-        // 4) 随机挑 1 个流派榜单作为「新鲜源」掺入
-        const genrePick = NEW_SONG_GENRES[Math.floor(rand() * NEW_SONG_GENRES.length)]
-
-        // 5) 并发拉各源候选池
-        const [artistLists, genreList] = await Promise.all([
-          Promise.all(picked.map(a => charts.fetchArtistTop(a, 25, "us").catch(() => [] as ChartTrack[]))),
-          charts.fetchChart(genrePick, 40, "us").catch(() => [] as ChartTrack[]),
-        ])
-        if (!alive) return
-
-        // 6) 读最近已推指纹（滚动 N 天）
-        const recentReco = (Storage.get<RecoRecent[]>(RECO_RECENT_KEY) ?? []).filter(r => r && Array.isArray(r.keys))
-        const recentKeys = new Set<string>()
-        for (const r of recentReco) for (const k of r.keys) recentKeys.add(k)
-
-        // 7) 每源洗牌 + 限流（每源≤RECO_PER_ARTIST_MAX 首），合并；排除已下载/已推/重复
-        const allSources: ChartTrack[][] = [...artistLists, genreList]
-        const buildMerged = (excludeRecent: boolean): ChartTrack[] => {
-          const out: ChartTrack[] = []
-          const seen = new Set<string>()
-          for (const list of allSources) {
-            const shuffled = shuffleWith(list, rand)
-            let taken = 0
-            for (const t of shuffled) {
-              if (taken >= RECO_PER_ARTIST_MAX) break
-              const k = trackKey(t.title, t.artist)
-              if (ownedKeys.has(k) || seen.has(k)) continue
-              if (excludeRecent && recentKeys.has(k)) continue
-              seen.add(k); out.push(t); taken++
-            }
-          }
-          return shuffleWith(out, rand).slice(0, RECO_TARGET)
-        }
-        // 优先排除最近已推；若排空到太少（候选枯竭），放宽不排除
-        let merged = buildMerged(true)
-        if (merged.length < 6) merged = buildMerged(false)
-
-        if (!alive) return
-        setRecommend(merged)
-
-        // 8) 写当日结果缓存 + 滚动更新「最近已推」指纹
-        try {
-          Storage.set<RecoDaily>(RECO_DAILY_KEY, { day, tracks: merged })
-          const todayKeys = merged.map(t => trackKey(t.title, t.artist))
-          const nextRecent = [
-            { day, keys: todayKeys },
-            ...recentReco.filter(r => r.day !== day),
-          ].slice(0, RECO_RECENT_DAYS)
-          Storage.set<RecoRecent[]>(RECO_RECENT_KEY, nextRecent)
-        } catch (e) {
-          console.error("[发现] 写推荐缓存失败:", e)
-        }
-      } catch {
-        if (alive) setRecommend([])
       }
-    })()
-    return () => { alive = false }
-  }, [])
+
+      // 1) 加权统计艺人偏好 + 已下载指纹
+      let weighted: { name: string; artistId?: number }[] = []
+      const ownedKeys = new Set<string>()
+      try {
+        const [downloaded, favorites, recent] = await Promise.all([
+          database.getDownloadedMusic().catch(() => [] as Music[]),
+          database.getFavoriteMusic().catch(() => [] as Music[]),
+          database.getRecentlyPlayed(30).catch(() => [] as Music[]),
+        ])
+        const weights: { list: Music[]; w: number }[] = [
+          { list: downloaded, w: 3 },
+          { list: favorites, w: 2 },
+          { list: recent, w: 1 },
+        ]
+        const counter = new Map<string, number>()
+        for (const { list, w } of weights) {
+          for (const m of list) {
+            const name = (m.artist || "").trim()
+            if (name && name !== "未知艺术家") counter.set(name, (counter.get(name) ?? 0) + w)
+          }
+        }
+        for (const m of downloaded) ownedKeys.add(trackKey(m.title, m.artist))
+        weighted = [...counter.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name]) => ({ name }))
+      } catch (e) {
+        console.error("[发现] 读偏好数据失败:", e)
+      }
+
+      // 2) 按天 seed（叠加库指纹 + nonce）构造 PRNG。
+      //    手动刷新自增 nonce → 同一天也能旋转出新结果。
+      let nonce = Storage.get<number>(RECO_NONCE_KEY) ?? 0
+      if (force) { nonce = nonce + 1; Storage.set<number>(RECO_NONCE_KEY, nonce) }
+      const libSig = weighted.map(s => s.name).join(",")
+      const seed = hashStr(`${day}|${libSig}|${nonce}`)
+      const rand = mulberry32(seed)
+
+      // 3) 选种子艺人：加权候选洗牌取前若干 + 默认池洗牌补齐到 ~4 个
+      const picked: { name: string; artistId?: number }[] = []
+      const have = new Set<string>()
+      const pushSeed = (a: { name: string; artistId?: number }) => {
+        const k = a.name.toLowerCase()
+        if (have.has(k)) return
+        have.add(k); picked.push(a)
+      }
+      for (const a of shuffleWith(weighted, rand).slice(0, 3)) pushSeed(a)
+      if (picked.length > 0) { if (alive()) setRecoFromDownloads(true) }
+      for (const a of shuffleWith(SEED_ARTISTS, rand)) {
+        if (picked.length >= 4) break
+        pushSeed(a)
+      }
+
+      // 4) 随机挑 1 个流派榜单作为「新鲜源」掺入
+      const genrePick = NEW_SONG_GENRES[Math.floor(rand() * NEW_SONG_GENRES.length)]
+
+      // 5) 并发拉各源候选池
+      const [artistLists, genreList] = await Promise.all([
+        Promise.all(picked.map(a => charts.fetchArtistTop(a, 25, "us").catch(() => [] as ChartTrack[]))),
+        charts.fetchChart(genrePick, 40, "us").catch(() => [] as ChartTrack[]),
+      ])
+      if (!alive()) return
+
+      // 6) 读最近已推指纹（滚动 N 天）
+      const recentReco = (Storage.get<RecoRecent[]>(RECO_RECENT_KEY) ?? []).filter(r => r && Array.isArray(r.keys))
+      const recentKeys = new Set<string>()
+      for (const r of recentReco) for (const k of r.keys) recentKeys.add(k)
+
+      // 7) 每源洗牌 + 限流（每源≤RECO_PER_ARTIST_MAX 首），合并；排除已下载/已推/重复
+      const allSources: ChartTrack[][] = [...artistLists, genreList]
+      const buildMerged = (excludeRecent: boolean): ChartTrack[] => {
+        const out: ChartTrack[] = []
+        const seen = new Set<string>()
+        for (const list of allSources) {
+          const shuffled = shuffleWith(list, rand)
+          let taken = 0
+          for (const t of shuffled) {
+            if (taken >= RECO_PER_ARTIST_MAX) break
+            const k = trackKey(t.title, t.artist)
+            if (ownedKeys.has(k) || seen.has(k)) continue
+            if (excludeRecent && recentKeys.has(k)) continue
+            seen.add(k); out.push(t); taken++
+          }
+        }
+        return shuffleWith(out, rand).slice(0, RECO_TARGET)
+      }
+      // 优先排除最近已推；若排空到太少（候选枯竭），放宽不排除
+      let merged = buildMerged(true)
+      if (merged.length < 6) merged = buildMerged(false)
+
+      if (!alive()) return
+      setRecommend(merged)
+
+      // 8) 写当日结果缓存 + 滚动更新「最近已推」指纹
+      try {
+        Storage.set<RecoDaily>(RECO_DAILY_KEY, { day, tracks: merged })
+        const todayKeys = merged.map(t => trackKey(t.title, t.artist))
+        const nextRecent = [
+          { day, keys: todayKeys },
+          ...recentReco.filter(r => r.day !== day),
+        ].slice(0, RECO_RECENT_DAYS)
+        Storage.set<RecoRecent[]>(RECO_RECENT_KEY, nextRecent)
+      } catch (e) {
+        console.error("[发现] 写推荐缓存失败:", e)
+      }
+    } catch {
+      if (alive() && !force) setRecommend([])
+    } finally {
+      recoInflightRef.current = false
+      if (recoMountedRef.current) setRecoLoading(false)
+    }
+  }
 
   async function loadGenre(g: ChartGenre) {
     setLoading(true)
@@ -372,6 +392,11 @@ export function DiscoverView() {
               <Text font="title3" fontWeight="bold" foregroundStyle="label">为你推荐</Text>
               <Spacer />
               <Text font="caption" foregroundStyle="tertiaryLabel">{recoFromDownloads ? "基于你下载的艺术家" : "基于你的口味"}</Text>
+              <Button action={() => { if (!recoLoading) loadRecommend(true) }} buttonStyle="plain">
+                {recoLoading
+                  ? <ProgressView />
+                  : <Image systemName="arrow.clockwise" font="subheadline" fontWeight="semibold" foregroundStyle="systemPink" />}
+              </Button>
             </HStack>
           }
         >

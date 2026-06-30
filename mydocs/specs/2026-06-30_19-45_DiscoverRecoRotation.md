@@ -58,3 +58,4 @@
   - `index.tsx`：推荐 effect 重写为按天轮换——`todayKey()` 取本地 YYYY-MM-DD；seed=`hashStr(day|库指纹)`；加权 Top6 洗牌取3 + 默认池洗牌补到4 + 随机 1 个流派榜单源掺入；各源 fetchArtistTop(25)/fetchChart(40) 候选；每源洗牌限流≤3首；排除已下载 + 最近3天已推指纹；最终洗牌取24。`Storage` 加 `discover_reco_daily`(当日结果，同日复用跨天重算) 与 `discover_reco_recent`(滚动3天已推指纹)。任何步骤失败静默降级。
   - 验证：`preview_ui` 整链编译通过（仅预览环境缺 player Context 的运行时告警，与本改动无关）；node 自检确认同日 seed 结果一致、跨天结果不同。
 - 状态：已实现，待真机确认「同日稳定、跨天/清缓存后有变化」。
+- 2026-06-30 追加：手动刷新按钮。推荐计算抽为 `loadRecommend(force)`；「为你推荐」header 右侧加 `arrow.clockwise` 按钮（加载中显 ProgressView）。`force=true` 跳过当日缓存、自增 `discover_reco_nonce` 叠加进 seed（`day|libSig|nonce`）旋转出新一批，仍受「最近3天已推」排除约束。`recoInflightRef` 防重入，`recoMountedRef` 防卸载后 setState。`preview_ui` 编译通过。

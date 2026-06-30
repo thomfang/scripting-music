@@ -94,7 +94,7 @@
 - 试听整栏目入队：当前流派 tracks 映射为 preview Music 队列，`player.setQueue(queue, idx)` + `player.play(queue[idx])`。
 - 新歌接口修复：iTunes Search 按相关性/热度，捞不到真正新歌；应跨口味流派拉 topsongs RSS limit=100，用 `im:releaseDate.label` 过滤近 9 个月，再按 releaseDate 降序去重。
 - 推荐种子：加权【下载×3 + 收藏×2 + 最近播放×1】统计 artist 偏好；推荐曲排除已下载与重复。
-- **推荐轮换算法**（`2026-06-30_19-45_DiscoverRecoRotation` spec）：原算法「无变化因子」恒定输出，已改为按天轮换。`charts.ts` 导出 `hashStr/mulberry32/shuffleWith` 纯函数 PRNG，`SEED_ARTISTS` 扩到 12 个，`NEW_SONG_GENRES` 导出，`fetchArtistTop` 默认 limit=25。`index.tsx`：seed=`hashStr(YYYY-MM-DD|库指纹)`→加权Top6洗牌取3 + 默认池补到4 + 随机1流派源；各源候选洗牌、每源≤3首、排除已下载+最近3天已推、最终洗牌取24。Storage：`discover_reco_daily`(同日复用/跨天重算)、`discover_reco_recent`(滚动3天已推指纹)。
+- **推荐轮换算法**（`2026-06-30_19-45_DiscoverRecoRotation` spec）：原算法「无变化因子」恒定输出，已改为按天轮换。`charts.ts` 导出 `hashStr/mulberry32/shuffleWith` 纯函数 PRNG，`SEED_ARTISTS` 扩到 12 个，`NEW_SONG_GENRES` 导出，`fetchArtistTop` 默认 limit=25。`index.tsx`：seed=`hashStr(YYYY-MM-DD|库指纹|nonce)`→加权Top6洗牌取3 + 默认池补到4 + 随机1流派源；各源候选洗牌、每源≤3首、排除已下载+最近3天已推、最终洗牌取24。Storage：`discover_reco_daily`(同日复用/跨天重算)、`discover_reco_recent`(滚动3天已推)、`discover_reco_nonce`(手动刷新自增)。计算抽为 `loadRecommend(force)`；header 右侧 `arrow.clockwise` 手动刷新按钮（force 跳缓存 + 旋转 nonce）。
 - DB 未 init（preview_ui）时静默降级默认池随机。
 
 ## 资料库页
