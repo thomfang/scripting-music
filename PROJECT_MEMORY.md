@@ -24,6 +24,7 @@
   - `b9e459bb` 艺人列表头像 + 详情 header
   - `87241920` 艺人 banner header padding 修复
   - `acf9107a` 专辑封面 + 专辑详情页 header（TheAudioDB album 源）
+  - `bc27132f` 资料库重设计：横向卡片墙 + 播放列表拼图封面 + 详情页 header + 入口收敛
 
 ## 音源架构
 
@@ -95,12 +96,14 @@
 
 ## 资料库页
 
-- 首页重做为与发现页同语言：快捷宫格、最近添加、最爱/常听、分类。
-- `page/library/components.tsx`：`LibrarySectionHeader`、`QuickEntryGrid/Card`、`RecentlyAddedCard`、`FavoriteSongRow` 等。
-- 顶层页面的 `navigationTitle`/`toolbar` 会由 Scripting 框架自动注入到组件根视图；组件不要手动消费再渲染，否则退出按钮重复。
-- `LazyVGrid` columns 的 `size` 必填：例如 `{size:{type:"flexible"}, spacing:10}`。
-- List row 内多个 `NavigationLink` 会命中区串扰；宫格卡必须用 Button + `navigationDestination` 编程式 push，不要继续调 `contentShape`。
-- `Label badge={n}` 会显示在行尾 chevron 左侧；`badge=0` SwiftUI 自动隐藏。
+- 首页（`index.tsx`，`bc27132f` 重设计）段落：A 快捷宫格（**精简 4 格**：歌曲/我喜欢/已下载/最近播放）→ B 最近添加（横向 130pt 卡）→ 艺人横滑（圆头像）→ 专辑横滑（方封面）→ 播放列表横滑（拼图）→ C 最爱/常听行。**原 D 段纯文字分类已删**（去重）。
+- `components.tsx` 组件：`LibrarySectionHeader`、`QuickEntryGrid/Card`、`RecentlyAddedCard`、`FavoriteSongRow`、`CoverTile`/`CoverCollage`、`ArtistCircleCard`、`AlbumCoverCard`、`PlaylistCollageCard`、`HorizontalCardRail`。
+- **封面拼图 `CoverCollage`**：≥4 首 → 2×2，1–3 → 单张，0 → 占位；`blur` prop 可作模糊 banner；banner 背景需 `size={Device.screen.width}` + 外层 `ZStack frame maxWidth:infinity height:300 clipped` 才能填满屏宽（固定方图会两侧留白）。`CoverTile` 自查 coverExists→远程→占位。
+- 播放列表（`playlists.tsx`）：`PlaylistsView` 列表行用 `CoverCollage`（50pt）；`PlaylistDetail` 顶部 `PlaylistHeader`（拼图模糊 banner + 前景 150pt 拼图 + 名 + chips「N 首/总时长/更新时间」），与 AlbumHeader 对齐；导出 `PlaylistDetailPage` 供首页卡片跳转。
+- `ArtistDetail`/`AlbumDetail` 已 `export`，供首页卡片编程式 push。
+- 顾层页 `navigationTitle`/`toolbar` 由框架自动注入组件根视图；组件不要手动消费重渲染，否则退出按钮重复。
+- `LazyVGrid` columns 的 `size` 必填；`Label badge={n}` 在行尾 chevron 左侧，`badge=0` 自动隐藏。
+- List row 内多 `NavigationLink` 命中区串扰；首页卡片/宫格用 Button + `navTarget`/`navigationDestination` 编程式 push。
 - 收藏区 fallback：收藏>0 时收藏优先、常听补足；完全无收藏才退化成「常听歌曲」。
 
 ## 艺人列表/详情页
@@ -160,3 +163,4 @@
 - `mydocs/specs/2026-06-29_22-55_LibraryRedesign.md`
 - `mydocs/specs/2026-06-30_00-55_ArtistImageDetail.md`
 - `mydocs/specs/2026-06-30_09-35_AlbumImageDetail.md`
+- `mydocs/specs/2026-06-30_09-50_LibraryCardsRedesign.md`
