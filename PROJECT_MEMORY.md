@@ -32,7 +32,7 @@
   - `c003ef44` 播放列表列表页重设计：新建/导入收进右上角 + 菜单，加空态
   - `c89e33e2` 播放页对抗性修复：play_count 去重计数 + 切歌竞态 playToken + 歌词在线落地 + LRU + shuffle 历史栈
   - `6708a6f0` fix: playNext/addToQueue 队列变更后重置 shuffle 历史
-  - (待提交) 资料库首页导航竞态修复：卡片墙改声明式 NavigationLink；快捷宫格(LazyVGrid)用 Button+每卡独立 navigationDestination
+  - `8d276e03` 资料库首页导航竞态修复：卡片墙改声明式 NavigationLink；快捷宫格(LazyVGrid)用 Button+每卡独立 navigationDestination
   - `c89e33e2` 播放页对抗性修复：play_count 去重计数 + 切歌竞态 playToken + 歌词在线落地 + LRU + shuffle 历史栈
 
 ## 音源架构
