@@ -34,6 +34,7 @@
   - `6708a6f0` fix: playNext/addToQueue 队列变更后重置 shuffle 历史
   - `8d276e03` 资料库首页导航竞态修复：卡片墙改声明式 NavigationLink；快捷宫格(LazyVGrid)用 Button+每卡独立 navigationDestination
   - `3da93621` 播放页点艺人/专辑跳详情页（嵌套 sheet+NavigationStack）+ 搜索页新增艺人/专辑模式；抽共享行组件 rows.tsx、搜索占位/结果区组件
+  - `<pending>` 搜索页艺人/专辑改走在线 iTunes（itunes_browse.ts + online_detail.tsx）+ 播放页详情 sheet 补 tint=systemPink
   - `c89e33e2` 播放页对抗性修复：play_count 去重计数 + 切歌竞态 playToken + 歌词在线落地 + LRU + shuffle 历史栈
 
 ## 音源架构
@@ -135,6 +136,19 @@
 - **模块化**：艺人/专辑列表行抽到 `page/library/rows.tsx`（`ArtistRow`/`AlbumRow`），资料库列表页与搜索结果区共用（删除原私有 `ArtistRowContent`/`AlbumRowContent`）。搜索页拆 `components/entity_results.tsx`（`ArtistResultsSection`/`AlbumResultsSection`，普通列表声明式 NavigationLink）、`components/search_placeholder.tsx`（searching/error/empty 占位收敛）。
 - **搜索逻辑**：`SearchMode=online|local|artist|album`；`doArtistSearch`/`doAlbumSearch` 走 `database.getMusicByArtist/getMusicByAlbum` 过滤；`showEmpty`/`has*Results` 覆盖四模式。
 
+## 在线艺人/专辑搜索浏览 + 播放页 sheet tint（spec `2026-07-01_07-43`）
+
+- **接口（iTunes Search/Lookup，必带 UA，country=US）**：
+  - `search?entity=musicArtist` → 艺人（artistName/artistId/genre，**无图**）
+  - `search?entity=album` → 专辑（collectionName/artistName/collectionId/封面/年份/曲数）
+  - `lookup?id=<artistId>&entity=album` → 首条 artist + 该艺人全部专辑
+  - `lookup?id=<collectionId>&entity=song` → 首条 collection + 各 track（trackName/trackNumber/duration/previewUrl）
+- **数据层** `class/sources/itunes_browse.ts`：单例 `itunesBrowse`，4 方法 + 8s 超时 + 轻量缓存 + 降级空；封面 100→600。与 `itunes_meta.ts`（搜索结果富化）区分。
+- **在线详情页** `page/search/online_detail.tsx`：`OnlineAlbumDetail`（曲目列表 + 播放全部 + SearchResultCard）、`OnlineArtistDetail`（专辑墙）。曲目播放走 mp3juice 实时解析（`trackToMusic`→player、`trackToMusicData`→SearchResultCard；id 用 iTunes trackId，**不依赖 id 对应真实音频**，mp3juice 按「标题 艺人」搜）。
+- **艺人无官方图**：详情页头像/简介仍靠 TheAudioDB `artistInfo`，封面靠 iTunes，互补。
+- **搜索页**：艺人/专辑模式从查本地改为 `itunesBrowse.searchArtists/searchAlbums`；`entity_results.tsx` 重写为在线版（艺人行 `ArtistRow`+可选 subtitle 显 genre，专辑行 iTunes 封面）。本地/在线歌曲模式不变。
+- **sheet tint 修复**：播放页详情 sheet（`entity_sheet.tsx`）的 `NavigationStack` 加 `tint="systemPink"`——嵌套 sheet 不继承 TabView tint。确认播放页用 sheet modifier（非 Navigation.present）。
+
 ## 艺人列表/详情页
 
 ### 数据源
@@ -194,3 +208,4 @@
 - `mydocs/specs/2026-06-30_09-35_AlbumImageDetail.md`
 - `mydocs/specs/2026-06-30_09-50_LibraryCardsRedesign.md`
 - `mydocs/specs/2026-06-30_23-56_PlayerEntityNav_SearchEntityModes.md`
+- `mydocs/specs/2026-07-01_07-43_OnlineArtistAlbumSearch_SheetTint.md`

@@ -24,6 +24,7 @@ import { fileManager } from "../../class/file_manager"
 import { SearchResultCard } from "./components/search_result_card"
 import { SongRow } from "../components/song_row"
 import { ArtistResultsSection, AlbumResultsSection } from "./components/entity_results"
+import { itunesBrowse, ItunesArtist, ItunesAlbum } from "../../class/sources/itunes_browse"
 import { SearchPlaceholder } from "./components/search_placeholder"
 import { addToHistory, getHistory, clearHistory } from "./components/search_history"
 import { usePlayerState } from "../../class/player_state"
@@ -33,8 +34,6 @@ import { LRUCache } from "../../class/lru_cache"
 type CacheEntry = { data: MusicData[], timestamp: number }
 type SortType = "relevance" | "title" | "artist"
 type SearchMode = "online" | "local" | "artist" | "album"
-type ArtistGroup = { artist: string, count: number, musics: Music[] }
-type AlbumGroup = { album: string, artist: string, count: number, musics: Music[] }
 
 const searchCache = new LRUCache<string, CacheEntry>(50)
 const CACHE_DURATION = 5 * 60 * 1000
@@ -45,8 +44,8 @@ export function SearchView() {
   const [mode, setMode] = useState<SearchMode>("online")
   const [results, setResults] = useState<MusicData[] | null>(null)
   const [localResults, setLocalResults] = useState<Music[] | null>(null)
-  const [artistResults, setArtistResults] = useState<ArtistGroup[] | null>(null)
-  const [albumResults, setAlbumResults] = useState<AlbumGroup[] | null>(null)
+  const [artistResults, setArtistResults] = useState<ItunesArtist[] | null>(null)
+  const [albumResults, setAlbumResults] = useState<ItunesAlbum[] | null>(null)
   const [localCoverExists, setLocalCoverExists] = useState<Record<string, boolean>>({})
   const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -104,11 +103,9 @@ export function SearchView() {
     setArtistResults(null)
     setError(null)
     try {
-      const groups = await database.getMusicByArtist()
-      const lower = q.toLowerCase()
-      setArtistResults(groups.filter(g => g.artist.toLowerCase().includes(lower)))
+      setArtistResults(await itunesBrowse.searchArtists(q))
     } catch {
-      setError("搜索失败")
+      setError("搜索失败，请检查网络连接后重试")
       setArtistResults([])
     } finally {
       setIsSearching(false)
@@ -120,13 +117,9 @@ export function SearchView() {
     setAlbumResults(null)
     setError(null)
     try {
-      const groups = await database.getMusicByAlbum()
-      const lower = q.toLowerCase()
-      setAlbumResults(groups.filter(g =>
-        g.album.toLowerCase().includes(lower) || g.artist.toLowerCase().includes(lower)
-      ))
+      setAlbumResults(await itunesBrowse.searchAlbums(q))
     } catch {
-      setError("搜索失败")
+      setError("搜索失败，请检查网络连接后重试")
       setAlbumResults([])
     } finally {
       setIsSearching(false)
@@ -254,8 +247,8 @@ export function SearchView() {
         placement: "navigationBarDrawer",
         prompt: mode === "online" ? "搜索音乐、艺人、专辑"
           : mode === "local" ? "搜索本地歌曲"
-          : mode === "artist" ? "搜索库中艺人"
-          : "搜索库中专辑"
+          : mode === "artist" ? "搜索艺人（在线）"
+          : "搜索专辑（在线）"
       }}
       searchSuggestions={
         <>

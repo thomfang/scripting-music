@@ -12,8 +12,9 @@ import { albumInfo } from "../../class/sources/album_info"
  * 注意：两者均为「纯展示」组件，点击导航由调用方用 NavigationLink 包裹。
  */
 
-/** 艺人行：圆形真实头像懒加载，查不到/加载失败降级到占位。 */
-export function ArtistRow({ artist, count }: { artist: string, count: number }) {
+/** 艺人行：圆形真实头像懒加载，查不到/加载失败降级到占位。
+ *  subtitle 传入时覆盖默认「N 首歌曲」（在线搜索场景显示流派）。 */
+export function ArtistRow({ artist, count, subtitle }: { artist: string, count: number, subtitle?: string }) {
   const [thumb, setThumb] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -42,7 +43,7 @@ export function ArtistRow({ artist, count }: { artist: string, count: number }) 
       )}
       <VStack alignment="leading" spacing={2}>
         <Text font="headline" lineLimit={1}>{artist}</Text>
-        <Text font="subheadline" foregroundStyle="secondaryLabel">{count} 首歌曲</Text>
+        <Text font="subheadline" foregroundStyle="secondaryLabel">{subtitle ?? `${count} 首歌曲`}</Text>
       </VStack>
     </HStack>
   )

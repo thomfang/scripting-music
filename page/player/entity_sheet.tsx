@@ -41,13 +41,13 @@ export function PlayerArtistSheet({ artist, onDismiss }: { artist: string, onDis
   if (musics === null) return <CenterState icon="person.crop.circle" text="加载中..." />
   if (musics.length === 0) {
     return (
-      <NavigationStack>
+      <NavigationStack tint="systemPink">
         <CenterState icon="person.crop.circle.badge.questionmark" text={`库中没有「${artist}」的歌曲`} />
       </NavigationStack>
     )
   }
   return (
-    <NavigationStack>
+    <NavigationStack tint="systemPink">
       <ArtistDetail artist={artist} musics={musics} onClose={onDismiss} />
     </NavigationStack>
   )
@@ -74,13 +74,13 @@ export function PlayerAlbumSheet({ album, artist, onDismiss }: { album: string, 
   if (musics === null) return <CenterState icon="square.stack" text="加载中..." />
   if (musics.length === 0) {
     return (
-      <NavigationStack>
+      <NavigationStack tint="systemPink">
         <CenterState icon="square.stack.3d.up.slash" text={`库中没有「${album}」的歌曲`} />
       </NavigationStack>
     )
   }
   return (
-    <NavigationStack>
+    <NavigationStack tint="systemPink">
       <AlbumDetail album={album} artist={artist} musics={musics} onClose={onDismiss} />
     </NavigationStack>
   )
