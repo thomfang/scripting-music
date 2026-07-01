@@ -37,6 +37,7 @@
   - `de891b4b` 搜索页艺人/专辑改走在线 iTunes（itunes_browse.ts + online_detail.tsx）+ 播放页详情 sheet 补 tint=systemPink
   - `92e3f1d1` 在线专辑/艺人详情曲目走真实 mp3juice 源(resolve_real.ts；可播放/下载/加歌单+解析态)+统一播放页/mini封面(use_cover.ts；已下载优先本地文件)
   - `e857e5b1` 对抗性 review 修复：在线曲目高亮改包含式 title+artist 匹配（mp3juice title 带噪声不能精确等）；playAll 后台入队加 queueBuildToken 防队列污染；单曲播放 bump token；TrackRow 卸载守卫+timer 清理
+  - `ef054b15` 全局下载中心（download_center.ts 单例 Store + 并发队列 + 订阅 + 启动对账）+ 断点续传（part 落盘 + Range 206续/200重下）+ 6+ 下载调用点统一走 center + 库首页工具栏按需显下载入口（播放左侧）+ 修复退出丢下载状态
   - `c89e33e2` 播放页对抗性修复：play_count 去重计数 + 切歌竞态 playToken + 歌词在线落地 + LRU + shuffle 历史栈
 
 ## 音源架构
@@ -156,7 +157,17 @@
   - **playAll 队列污染竞态**（`e857e5b1`）：首曲即播 + fire-and-forget 后台逐首 `addToQueue`；若期间用户另点专辑/单曲，旧 loop 会污染新队列。模块级 `queueBuildToken`：playAll 入口 `++token`，后台每次 `addToQueue` 前校验；单曲播放也 `token++` 断旧 loop。
 - **播放页/mini 封面统一**（同 commit）：`page/player/use_cover.ts` 的 `useResolvedCover(music)→{localImage,remoteUrl}`，**已下载优先本地封面文件**（`getCoverPath`，与实际音频同源；下载若走 `findReplacementSource` 换源，本地图会与 DB `cover_url` 不同），否则远程 `cover_url`。`Cover`/`CoverBackground`/`PlayerInfo` 三处统一用它，修复 mini 与 player 页显示两张不同封面。
 
-## 艺人列表/详情页
+## 全局下载中心 + 断点续传（`ef054b15`，spec `2026-07-01_08-56`）
+
+- **问题**：下载进度原本只活在各页面组件 state（`downloadingIds`/`isDownloading`+setTimeout 轮询 DB），退出/切页即丢，用户体感「退出就取消」。实际引擎 `fetchDownloader`（模块级单例）还在后台跑，只是无全局 UI 反映。
+- **`class/download_center.ts`（单例 Store）**：所有下载统一 `downloadCenter.enqueue(info)`。内部 `Map<id,item>` + order + queue + active，**并发上限 3**，订阅通知（仿 player.on）。`enqueue` 返回 terminal（completed/cancelled resolve、failed reject）promise，保持 await 处「下完刷新」语义。`pause/resume/cancel/retry/remove/clearFinished/pauseAll/resumeAll`。`activeCount()`=queued+downloading+paused+failed（决定入口显隐，completed 不计）。`init()` 启动对账：把 DB 里上次会话卡在 downloading/pending/paused 且未下完的任务恢复为 paused（可重试/续传）。**坑**：`fetchDownloader.downloadMusic` 在已下载/已在队列时静默早退不触发 onProgress → center `start` 必须先探测 `audioExists` 否则 item 卡死 downloading、awaiter 永不结算。进度桥统一走 `onEngineProgress`。
+- **`class/use_download_center.ts`**：`useDownloadCenter()→{items,activeCount}`，模块级单例直接订阅（不用 Context）。
+- **`page/library/download_center.tsx`**：下载中心页；行内 `ProgressView value` + 状态文案 + 暂停/继续/取消/重试/移除；toolbar 全部暂停/继续/清除已完成；空态。
+- **入口**：`page/library/index.tsx` 工具栏 `topBarTrailing` HStack，`activeCount>0` 时在「播放」Menu **左侧**显 `arrow.down.circle`+数字的 NavigationLink 进下载中心；为 0 隐藏。
+- **断点续传（`fetch_downloader.ts` + `file_manager.ts`）**：新增 `<root>/downloads/<id>.part` 落盘（`appendPart` 用 `FileManager.appendData(Data.fromUint8Array)`，回退读+拼+写）。`performDownload` 改落盘式：part 存在且 `partUrl===当前解析URL` → 发 `Range: bytes=<offset>-`；**206** 续写（total 从 `Content-Range .../total` 解析）、**offset>0 但返回 200**（服务端忽略 Range）→ 删 part 从头重下。暂停保留 part/task/cb（不删）；`resume` 同会话走 `resumeDownload`（part 命中续），跨对账/被杀走 fresh `enqueue`/`start`（换 URL 自动重下）。取消删 part；失败**不删** part（便于重试续）。mp3juice 直链每次 resolve 可能换 CDN，换 URL 即重下（安全）。
+- **调用点**：`all_songs/favorites/playlists/discover/online_detail/search_result_card/player/control` + `batch_download_helper.runBatchDownload`（改 center.enqueue 并发聚合）全部统一走 center；`download_manager.ts`（=fetchDownloader 别名）仍被 search_result_card `isDownloaded` 等只读用。
+- **根 init**：`index.tsx` 在 `player.init()`(内含 database.init)+`downloadManager.init()` 后 `await downloadCenter.init()`。
+
 
 ### 数据源
 
@@ -216,3 +227,4 @@
 - `mydocs/specs/2026-06-30_09-50_LibraryCardsRedesign.md`
 - `mydocs/specs/2026-06-30_23-56_PlayerEntityNav_SearchEntityModes.md`
 - `mydocs/specs/2026-07-01_07-43_OnlineArtistAlbumSearch_SheetTint.md`
+- `mydocs/specs/2026-07-01_08-56_DownloadCenter.md`
