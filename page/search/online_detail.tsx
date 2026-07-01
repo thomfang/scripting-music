@@ -1,19 +1,22 @@
 import {
-  List, Section, Button, Label, HStack, VStack, ZStack, Rectangle, Text, Image,
+  List, Section, Button, Label, Group, HStack, VStack, ZStack, Rectangle, Spacer, Text, Image,
   NavigationLink, ProgressView, useEffect, useState,
 } from "scripting"
-import { MusicData } from "../../class/music"
-import { Music } from "../../class/database"
+import { Music, database } from "../../class/database"
 import { player } from "../../class/player"
+import { downloadManager } from "../../class/download_manager"
 import { usePlayerState } from "../../class/player_state"
 import { itunesBrowse, ItunesAlbum, ItunesTrack } from "../../class/sources/itunes_browse"
-import { SearchResultCard } from "./components/search_result_card"
+import { resolveRealMusic } from "../../class/sources/resolve_real"
+import { PlaylistPickerContent } from "../components/playlist_picker"
 
 /**
  * 在线（iTunes）艺人 / 专辑浏览详情页。
  *
  * - 数据：class/sources/itunes_browse（iTunes Search/Lookup）。
- * - 播放/下载/加歌单：曲目映射成 MusicData，复用 SearchResultCard（走 mp3juice 实时解析）。
+ * - 播放/下载/加歌单：iTunes 曲目只是元数据，trackId 不是 mp3juice/YouTube
+ *   的 videoId。必须先 resolveRealMusic（“标题 艺人”搜 mp3juice 取真实源），
+ *   再交给 player/downloader。与发现页同一套契约。
  * - 这些页面在搜索 Tab 的 NavigationStack 内，用声明式 NavigationLink push。
  */
 
@@ -22,37 +25,6 @@ const BANNER_SCRIM = {
   startPoint: "top",
   endPoint: "bottom",
 } as any
-
-/** iTunes 曲目 → MusicData（播放时 mp3juice 按「标题 艺人」实时搜索，不依赖 id 对应真实音频）。 */
-function trackToMusicData(t: ItunesTrack, fallbackCover?: string): MusicData {
-  return {
-    id: String(t.trackId),
-    title: t.title,
-    artist: t.artist || "未知艺术家",
-    album: t.album || "未知专辑",
-    duration: t.duration,
-    cover: t.cover ?? fallbackCover,
-    provider: "mp3juice",
-  }
-}
-
-/** iTunes 曲目 → 完整 Music（供 player.setQueue/play 用；cover_url 字段）。 */
-function trackToMusic(t: ItunesTrack, fallbackCover?: string): Music {
-  return {
-    id: String(t.trackId),
-    title: t.title,
-    artist: t.artist || "未知艺术家",
-    album: t.album || "未知专辑",
-    duration: t.duration ?? 0,
-    cover_url: t.cover ?? fallbackCover ?? "",
-    audio_url: "",
-    provider: "mp3juice",
-    is_downloaded: false,
-    added_at: Date.now(),
-    play_count: 0,
-    is_favorite: false,
-  }
-}
 
 function CenterState({ icon, text }: { icon: string, text: string }) {
   return (
@@ -67,12 +39,19 @@ function CenterState({ icon, text }: { icon: string, text: string }) {
 
 // ---------------- 在线专辑详情 ----------------
 
+/** 归一化标题用于“正在播放”匹配（真实源 id 与 iTunes trackId 不同，不能比 id）。 */
+function normTitle(s: string | undefined): string {
+  return (s || "").trim().toLowerCase()
+}
+
 export function OnlineAlbumDetail({ album, artist, collectionId, cover }: {
   album: string, artist: string, collectionId: number, cover?: string
 }) {
   const state = usePlayerState()
   const [data, setData] = useState<{ album: ItunesAlbum | null, tracks: ItunesTrack[] } | null>(null)
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false)
+  const [pendingTrack, setPendingTrack] = useState<ItunesTrack | null>(null)
+  const [busyAll, setBusyAll] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -85,7 +64,34 @@ export function OnlineAlbumDetail({ album, artist, collectionId, cover }: {
   const info = data?.album
   const effectiveCover = info?.cover ?? cover
   const tracks = data?.tracks ?? []
-  const queue: Music[] = tracks.map(t => trackToMusic(t, effectiveCover))
+
+  // 播放全部/随机：先解析首曲即播，其余后台解析逐步入队（避免一次性阻塞）。
+  async function playAll(shuffle: boolean) {
+    if (busyAll || tracks.length === 0) return
+    setBusyAll(true)
+    try {
+      const order = shuffle ? [...tracks].sort(() => Math.random() - 0.5) : tracks
+      const first = await resolveRealMusic({
+        title: order[0].title, artist: order[0].artist, album: order[0].album,
+        duration: order[0].duration, cover: order[0].cover ?? effectiveCover,
+      })
+      if (!first) return
+      player.setQueue([first], 0)
+      await player.play(first)
+      // 后台解析其余曲目，逐首入队
+      ;(async () => {
+        for (let i = 1; i < order.length; i++) {
+          const m = await resolveRealMusic({
+            title: order[i].title, artist: order[i].artist, album: order[i].album,
+            duration: order[i].duration, cover: order[i].cover ?? effectiveCover,
+          })
+          if (m) player.addToQueue(m)
+        }
+      })()
+    } finally {
+      setBusyAll(false)
+    }
+  }
 
   const chips: { icon: string, text: string }[] = []
   if (info?.year) chips.push({ icon: "calendar", text: info.year })
@@ -93,7 +99,36 @@ export function OnlineAlbumDetail({ album, artist, collectionId, cover }: {
   if (info?.trackCount) chips.push({ icon: "music.note.list", text: `${info.trackCount} 首` })
 
   return (
-    <List navigationTitle={album} navigationSubtitle={artist}>
+    <List navigationTitle={album} navigationSubtitle={artist} sheet={{
+      isPresented: showPlaylistPicker,
+      onChanged: (v: boolean) => { if (!v) { setShowPlaylistPicker(false); setPendingTrack(null) } },
+      content: (
+        <PlaylistPickerContent
+          onDismiss={() => { setShowPlaylistPicker(false); setPendingTrack(null) }}
+          onSelect={async (playlistId) => {
+            const t = pendingTrack
+            setShowPlaylistPicker(false)
+            setPendingTrack(null)
+            if (!t) return
+            const real = await resolveRealMusic({
+              title: t.title, artist: t.artist, album: t.album,
+              duration: t.duration, cover: t.cover ?? effectiveCover,
+            })
+            if (!real) return
+            const existing = await database.getMusic(real.id)
+            if (!existing) {
+              await database.addMusic({
+                id: real.id, title: real.title, artist: real.artist, album: real.album,
+                duration: real.duration, cover_url: real.cover_url ?? "", audio_url: "",
+                provider: real.provider, source_id: real.source_id,
+                is_downloaded: false, added_at: Date.now(),
+              })
+            }
+            await database.addMusicToPlaylist(playlistId, real.id)
+          }}
+        />
+      ),
+    }}>
       {/* header */}
       <Section listRowInsets={0} listRowSeparator="hidden">
         <ZStack frame={{ maxWidth: "infinity" }}>
@@ -132,25 +167,132 @@ export function OnlineAlbumDetail({ album, artist, collectionId, cover }: {
       ) : (
         <>
           <Section>
-            <Button action={async () => { if (queue.length === 0) return; player.setQueue(queue, 0); await player.play(queue[0]) }}>
-              <Label title="播放全部" systemImage="play.fill" tint="systemPink" />
+            <Button action={() => playAll(false)} disabled={busyAll}>
+              <Label title={busyAll ? "解析中..." : "播放全部"} systemImage="play.fill" tint="systemPink" />
             </Button>
-            <Button action={async () => { if (queue.length === 0) return; const s = [...queue].sort(() => Math.random() - 0.5); player.setQueue(s, 0); await player.play(s[0]) }}>
+            <Button action={() => playAll(true)} disabled={busyAll}>
               <Label title="随机播放" systemImage="shuffle" tint="systemPink" />
             </Button>
           </Section>
           <Section header={<Text>{`${tracks.length} 首曲目`}</Text>}>
             {tracks.map(t => (
-              <SearchResultCard
+              <OnlineTrackRow
                 key={String(t.trackId)}
-                info={trackToMusicData(t, effectiveCover)}
-                isPlaying={state.currentMusic?.id === String(t.trackId)}
+                track={t}
+                fallbackCover={effectiveCover}
+                isPlaying={normTitle(state.currentMusic?.title) === normTitle(t.title)}
+                onAddToPlaylist={() => { setPendingTrack(t); setShowPlaylistPicker(true) }}
               />
             ))}
           </Section>
         </>
       )}
     </List>
+  )
+}
+
+// ---------------- 在线曲目行 ----------------
+
+/**
+ * 在线专辑曲目行：点击/下载/加歌单前先 resolveRealMusic 解析真实 mp3juice 源。
+ * 解析中显 spinner。
+ */
+function OnlineTrackRow({ track, fallbackCover, isPlaying, onAddToPlaylist }: {
+  track: ItunesTrack, fallbackCover?: string, isPlaying: boolean, onAddToPlaylist: () => void
+}) {
+  const [resolving, setResolving] = useState(false)
+  const [downloaded, setDownloaded] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [coverError, setCoverError] = useState(false)
+  const cover = track.cover ?? fallbackCover
+
+  const meta = {
+    title: track.title, artist: track.artist, album: track.album,
+    duration: track.duration, cover,
+  }
+
+  async function withResolve<T>(fn: (m: Music) => Promise<T>) {
+    if (resolving) return
+    setResolving(true)
+    setFailed(false)
+    try {
+      const real = await resolveRealMusic(meta)
+      if (!real) { setFailed(true); setTimeout(() => setFailed(false), 2500); return }
+      await fn(real)
+    } catch (e) {
+      console.error("[在线曲目] 操作失败:", e)
+      setFailed(true); setTimeout(() => setFailed(false), 2500)
+    } finally {
+      setResolving(false)
+    }
+  }
+
+  const play = () => withResolve(async (real) => { await player.playNext(real) })
+
+  const download = () => withResolve(async (real) => {
+    const existing = await database.getMusic(real.id)
+    if (!existing) {
+      await database.addMusic({
+        id: real.id, title: real.title, artist: real.artist, album: real.album,
+        duration: real.duration, cover_url: real.cover_url ?? "", audio_url: "",
+        provider: real.provider, source_id: real.source_id,
+        is_downloaded: false, added_at: Date.now(),
+      })
+    }
+    await downloadManager.downloadMusic({
+      id: real.id, provider: real.provider!, title: real.title,
+      artist: real.artist, album: real.album, duration: real.duration,
+      cover: real.cover_url ?? "", source_id: real.source_id,
+    })
+    setDownloaded(true)
+  })
+
+  return (
+    <HStack
+      spacing={12}
+      onTapGesture={play}
+      contextMenu={{
+        menuItems: (
+          <Group>
+            <Button title="播放" systemImage="play.fill" action={play} />
+            <Button title="下载" systemImage="arrow.down.circle" action={download} />
+            <Button title="添加到播放列表" systemImage="music.note.list" action={onAddToPlaylist} />
+          </Group>
+        ),
+      }}
+      trailingSwipeActions={{
+        actions: [
+          <Button tint="systemBlue" action={download}>
+            <Label title="下载" systemImage="arrow.down.circle.fill" />
+          </Button>,
+        ],
+      }}
+    >
+      <Text font="footnote" fontWeight="medium" foregroundStyle="tertiaryLabel" frame={{ width: 24, alignment: "center" }}>
+        {track.trackNumber ? String(track.trackNumber) : "–"}
+      </Text>
+      {cover && !coverError ? (
+        <Image imageUrl={cover} resizable={true} scaleToFill={true} frame={{ width: 44, height: 44 }} clipShape={{ type: "rect", cornerRadius: 6 }} onError={() => setCoverError(true)} placeholder={<Image systemName="music.note" frame={{ width: 44, height: 44 }} />} />
+      ) : (
+        <Image systemName="music.note" font="title3" foregroundStyle="secondaryLabel" frame={{ width: 44, height: 44 }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 6 }} />
+      )}
+      <VStack alignment="leading" spacing={2}>
+        <Text font="headline" lineLimit={1} foregroundStyle={isPlaying ? "systemPink" : "label"}>{track.title}</Text>
+        <Text font="subheadline" foregroundStyle="secondaryLabel" lineLimit={1}>{track.artist}</Text>
+      </VStack>
+      <Spacer />
+      {resolving ? (
+        <ProgressView controlSize="small" />
+      ) : failed ? (
+        <Image systemName="exclamationmark.circle.fill" font="title3" foregroundStyle="systemRed" />
+      ) : downloaded ? (
+        <Image systemName="checkmark.circle.fill" font="title3" foregroundStyle="systemGreen" />
+      ) : isPlaying ? (
+        <Image systemName="waveform" font="body" foregroundStyle="systemPink" />
+      ) : (
+        <Image systemName="play.circle" font="title3" foregroundStyle="tertiaryLabel" />
+      )}
+    </HStack>
   )
 }
 

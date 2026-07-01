@@ -1,49 +1,10 @@
-import { HStack, VStack, Text, Image, useState, useEffect } from "scripting"
+import { HStack, VStack, Text, Image } from "scripting"
 import { usePlayerState } from "../../class/player_state"
-import { fileManager } from "../../class/file_manager"
+import { useResolvedCover } from "../player/use_cover"
 
 export function PlayerInfo() {
   const { currentMusic } = usePlayerState()
-  const [localCover, setLocalCover] = useState<UIImage | null>(null)
-  const [resolved, setResolved] = useState(false)
-
-  useEffect(() => {
-    if (!currentMusic) {
-      setLocalCover(null)
-      setResolved(false)
-      return
-    }
-    setLocalCover(null)
-    setResolved(false)
-    let cancelled = false
-    async function resolve() {
-      if (currentMusic!.is_downloaded) {
-        const path = fileManager.getCoverPath(currentMusic!.id)
-        const img = UIImage.fromFile(path)
-        if (!cancelled) {
-          setLocalCover(img)
-          setResolved(true)
-        }
-      } else {
-        if (!cancelled) setResolved(true)
-      }
-    }
-    resolve()
-    return () => { cancelled = true }
-  }, [currentMusic?.id])
-
-  if (!currentMusic) return (
-    <HStack spacing={10}>
-      <Image
-        systemName="music.note"
-        frame={{ width: 40, height: 40 }}
-        foregroundStyle="secondaryLabel"
-        background="secondarySystemFill"
-        clipShape={{ type: "rect", cornerRadius: 6 }}
-      />
-      <Text font="subheadline" foregroundStyle="secondaryLabel">未在播放</Text>
-    </HStack>
-  )
+  const { localImage, remoteUrl } = useResolvedCover(currentMusic)
 
   const placeholder = (
     <Image
@@ -55,27 +16,31 @@ export function PlayerInfo() {
     />
   )
 
+  if (!currentMusic) return (
+    <HStack spacing={10}>
+      {placeholder}
+      <Text font="subheadline" foregroundStyle="secondaryLabel">未在播放</Text>
+    </HStack>
+  )
+
   let coverView: JSX.Element
-  if (!resolved) {
-    coverView = placeholder
-  } else if (localCover) {
+  if (localImage) {
     coverView = (
       <Image
-        image={localCover}
+        image={localImage}
         resizable={true}
         frame={{ width: 40, height: 40 }}
         clipShape={{ type: "rect", cornerRadius: 6 }}
       />
     )
-  } else if (currentMusic.cover_url) {
+  } else if (remoteUrl) {
     coverView = (
       <Image
-        key={currentMusic.cover_url}
-        imageUrl={currentMusic.cover_url}
+        key={remoteUrl}
+        imageUrl={remoteUrl}
         resizable={true}
         frame={{ width: 40, height: 40 }}
         clipShape={{ type: "rect", cornerRadius: 6 }}
-        onError={() => setResolved(false)}
         placeholder={placeholder}
       />
     )

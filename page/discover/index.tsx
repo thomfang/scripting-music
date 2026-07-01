@@ -19,12 +19,12 @@ import {
   ContentUnavailableView,
 } from "scripting"
 import { charts, CHART_GENRES, SEED_ARTISTS, NEW_SONGS_GENRE_ID, NEW_SONG_GENRES, ChartTrack, ChartGenre, ITUNES_PREVIEW_PROVIDER, hashStr, mulberry32, shuffleWith } from "../../class/sources/charts"
-import { music } from "../../class/music"
 import { player } from "../../class/player"
 import { database, Music } from "../../class/database"
 import { downloadManager } from "../../class/download_manager"
 import { usePlayerState } from "../../class/player_state"
 import { PlaylistPickerContent } from "../components/playlist_picker"
+import { resolveRealMusic } from "../../class/sources/resolve_real"
 
 const SELECTED_GENRE_KEY = "discover_selected_genre"
 // 推荐轮换缓存：当日结果 + 最近已推指纹
@@ -277,26 +277,12 @@ export function DiscoverView() {
     await player.play(queue[start])
   }
 
-  // 用 "歌名 艺人" 搜 mp3juice，取首条真实可下载源
+  // 用 "歌名 艺人" 搜 mp3juice，取首条真实可下载源（共用 resolveRealMusic）
   async function resolveReal(t: ChartTrack): Promise<Music | null> {
-    const { items } = await music.search(`${t.title} ${t.artist}`)
-    const top = items?.[0]
-    if (!top) return null
-    return {
-      id: top.id,
-      title: top.title || t.title,
-      artist: top.artist || t.artist || "未知艺术家",
-      album: top.album || t.album || "未知专辑",
-      duration: top.duration || 0,
-      cover_url: top.cover || t.cover || "",
-      audio_url: "",
-      provider: top.provider,
-      source_id: (top as any).source_id,
-      is_downloaded: false,
-      added_at: Date.now(),
-      play_count: 0,
-      is_favorite: false,
-    }
+    return resolveRealMusic({
+      title: t.title, artist: t.artist, album: t.album,
+      duration: t.duration, cover: t.cover,
+    })
   }
 
   // 完整播放：走 mp3juice 实时解析

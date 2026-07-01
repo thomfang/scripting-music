@@ -1,5 +1,6 @@
 import { Image, ZStack, Rectangle, useState, useEffect } from "scripting"
 import { usePlayerState } from "../../class/player_state"
+import { useResolvedCover } from "./use_cover"
 
 /**
  * 前景专辑封面。播放时放大、暂停时缩小（scaleEffect + smooth 动画），
@@ -7,6 +8,7 @@ import { usePlayerState } from "../../class/player_state"
  */
 export function Cover() {
   const { currentMusic, isPlaying } = usePlayerState()
+  const { localImage, remoteUrl } = useResolvedCover(currentMusic)
   const [coverError, setCoverError] = useState(false)
 
   useEffect(() => { setCoverError(false) }, [currentMusic?.id])
@@ -25,17 +27,31 @@ export function Cover() {
 
   // 播放时满幅，暂停时收一点（更接近 Apple Music 的小幅缩放，而非明显变小）
   const scale = isPlaying ? 1 : 0.92
+  const anim = { animation: Animation.smooth({ duration: 0.5 }), value: isPlaying }
 
-  if (currentMusic?.cover_url && !coverError) {
+  // 已下载优先本地图件（与 mini player 一致）
+  if (localImage) {
     return (
       <Image
-        imageUrl={currentMusic.cover_url}
+        image={localImage}
+        resizable={true}
+        scaleToFill={true}
+        scaleEffect={scale}
+        animation={anim}
+      />
+    )
+  }
+
+  if (remoteUrl && !coverError) {
+    return (
+      <Image
+        imageUrl={remoteUrl}
         resizable={true}
         scaleToFill={true}
         onError={() => setCoverError(true)}
         placeholder={fallback}
         scaleEffect={scale}
-        animation={{ animation: Animation.smooth({ duration: 0.5 }), value: isPlaying }}
+        animation={anim}
       />
     )
   }
@@ -43,7 +59,7 @@ export function Cover() {
   return (
     <ZStack
       scaleEffect={scale}
-      animation={{ animation: Animation.smooth({ duration: 0.5 }), value: isPlaying }}
+      animation={anim}
     >
       {fallback}
     </ZStack>
@@ -133,6 +149,7 @@ const SCRIM = {
  */
 export function CoverBackground() {
   const { currentMusic, isPlaying } = usePlayerState()
+  const { localImage, remoteUrl } = useResolvedCover(currentMusic)
   const [coverError, setCoverError] = useState(false)
   const phase = useFlowPhase(isPlaying)
   const mesh = isPlaying ? meshFromPhase(phase) : MESH_FALLBACK
@@ -140,11 +157,28 @@ export function CoverBackground() {
 
   useEffect(() => { setCoverError(false) }, [currentMusic?.id])
 
-  if (currentMusic?.cover_url && !coverError) {
+  // 已下载优先本地图件（与 mini player / 前景 Cover 一致）
+  if (localImage) {
     return (
       <ZStack>
         <Image
-          imageUrl={currentMusic.cover_url}
+          image={localImage}
+          resizable={true}
+          scaleToFill={true}
+          blur={60}
+          scaleEffect={1.6}
+        />
+        <Rectangle fill={mesh} opacity={0.28} animation={meshAnim} />
+        <Rectangle fill={SCRIM} />
+      </ZStack>
+    )
+  }
+
+  if (remoteUrl && !coverError) {
+    return (
+      <ZStack>
+        <Image
+          imageUrl={remoteUrl}
           resizable={true}
           scaleToFill={true}
           onError={() => setCoverError(true)}
