@@ -13,7 +13,7 @@ import { FavoritesView } from "./favorites"
 import { ArtistsView, ArtistDetail } from "./artists"
 import { AlbumsView, AlbumDetail } from "./albums"
 import { PlaylistsView, PlaylistDetailPage } from "./playlists"
-import { RecentlyPlayedView, TopPlayedView } from "./smart_playlists"
+import { RecentlyPlayedView, TopPlayedView, RecentlyAddedView } from "./smart_playlists"
 import { DownloadCenterView } from "./download_center"
 import { useDownloadCenter } from "../../class/use_download_center"
 import {
@@ -193,7 +193,7 @@ export function LibraryView() {
               icon="clock.badge.plus"
               title="最近添加"
               subtitle={`${data.all.length} 首`}
-              seeAllDestination={<AllSongsView />}
+              seeAllDestination={<RecentlyAddedView />}
             />
           }
         >

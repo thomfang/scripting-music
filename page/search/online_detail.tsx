@@ -270,15 +270,8 @@ function OnlineTrackRow({ track, fallbackCover, isPlaying, onAddToPlaylist }: {
   const play = () => withResolve(async (real) => { queueBuildToken++; await player.playNext(real) })
 
   const download = () => withResolve(async (real) => {
-    const existing = await database.getMusic(real.id)
-    if (!existing) {
-      await database.addMusic({
-        id: real.id, title: real.title, artist: real.artist, album: real.album,
-        duration: real.duration, cover_url: real.cover_url ?? "", audio_url: "",
-        provider: real.provider, source_id: real.source_id,
-        is_downloaded: false, added_at: Date.now(),
-      })
-    }
+    // 不预先入库：下载成功后由 downloader 写入（is_downloaded:true），
+    // 否则取消/失败会在「最近添加」留下未下载完的残留。
     await downloadCenter.enqueue({
       id: real.id, provider: real.provider!, title: real.title,
       artist: real.artist, album: real.album, duration: real.duration,
