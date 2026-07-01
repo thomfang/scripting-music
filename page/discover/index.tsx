@@ -4,7 +4,7 @@ import {
   useRef,
   List,
   Section,
-  FlowLayout,
+  LazyVGrid,
   ScrollView,
   HStack,
   VStack,
@@ -380,7 +380,7 @@ export function DiscoverView() {
           }
         >
           <ScrollView axes="horizontal" listRowInsets={0} listRowSeparator="hidden">
-            <HStack spacing={14} padding={{ horizontal: 16, vertical: 6 }}>
+            <HStack spacing={14} padding={16}>
               {recommend.map(t => (
                 <RecommendCard
                   key={t.id}
@@ -398,39 +398,53 @@ export function DiscoverView() {
         </Section>
       )}
 
-      {/* 流派分类 chips — FlowLayout 自动换行 */}
-      <FlowLayout spacing={10}>
+      {/* 流派分类 — 2行3列等宽 Grid */}
+      <LazyVGrid
+        columns={[
+          { size: { type: "flexible" }, spacing: 10 },
+          { size: { type: "flexible" }, spacing: 10 },
+          { size: { type: "flexible" }, spacing: 10 },
+        ]}
+        spacing={10}
+        listRowInsets={16 as any}
+        listRowSeparator="hidden"
+      >
         {CHART_GENRES.map(g => {
           const active = g.id === genre.id
           return (
             <Button key={g.key} action={() => selectGenre(g)} buttonStyle="plain">
               <HStack
                 spacing={5}
-                padding={{ horizontal: 16, vertical: 9 }}
+                padding={{ horizontal: 8, vertical: 7 }}
                 background={active ? "systemPink" : "secondarySystemBackground"}
                 clipShape="capsule"
+                frame={{ maxWidth: "infinity" }}
                 shadow={active ? { color: "rgba(255,45,85,0.35)", radius: 8, x: 0, y: 3 } : undefined}
               >
-                <Text font={{ name: "system", size: 15 }}>{g.emoji ?? ""}</Text>
+                <Spacer />
+                <Text font={{ name: "system", size: 15 }} lineLimit={1}>{g.emoji ?? ""}</Text>
                 <Text
                   font="subheadline"
                   fontWeight={active ? "bold" : "medium"}
                   foregroundStyle={active ? "white" : "secondaryLabel"}
+                  lineLimit={1}
                 >
                   {g.label}
                 </Text>
+                <Spacer />
               </HStack>
             </Button>
           )
         })}
-      </FlowLayout>
+      </LazyVGrid>
 
       {loading ? (
-        <HStack listRowSeparator="hidden">
-          <Spacer />
-          <ProgressView />
-          <Spacer />
-        </HStack>
+        <Section listRowSeparator="hidden">
+          <VStack spacing={12} padding={{ top: 40, bottom: 40 }} frame={{ maxWidth: "infinity" }}>
+            <ProgressView />
+            <Text font="subheadline" foregroundStyle="secondaryLabel">正在加载榜单...</Text>
+          </VStack>
+        </Section>
       ) : error && (!tracks || tracks.length === 0) ? (
         <ContentUnavailableView
           title="加载失败"

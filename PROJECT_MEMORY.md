@@ -102,7 +102,6 @@
 - 展开歌词：`lyricExpanded` 时小封面 56pt 收到歌名左侧，Title `compact`；未展开大封面在上。
 - **封面正方形兼容（2026-07-01）**：`Cover` 接收 `{size, cornerRadius?, shadow?, matchedGeometryEffect?}`；结构=**固定边长正方盒**(`ZStack width=height=size`)→`clipShape` 圆角→`shadow`→`scaleEffect` 呼吸→内部 `Image scaleToFill + frame size×size` 填满被裁。任意比例封面(横/竖图)中心裁成正方形，**永不横向溢出**。大封面 `size=Device.screen.width-48`，展开小封面 `size=56`。⚠️ 正方盒必须给**明确边长**——`aspectRatio` 加在无内在尺寸的填充容器上会塌成 0（踩过：大封面 `maxWidth:infinity`+`aspectRatio` 高度塌 0 全空白）。
 - **`matchedGeometryEffect` 跨条件分支不可用**：想用 Hero 让大/小封面在展开/收起间形变，但 `matchedGeometryEffect` 在**条件分支**(`lyricExpanded ? <HStack> : <VStack>`)间会把视图整棵移除/重建，导致封面+标题**全空白**。已放弃 Hero，改用 `withAnimation(Animation.smooth(0.45))` + 容器 `animation` prop 做简单缩放/淡入过渡。`Cover` 的 `matchedGeometryEffect` 保留为可选 prop（不传即忽略）。
-- **`padding={undefined}` 致组件静默崩溃（重要通用坑，2026-07-01）**：`Title` 根 `VStack` 写 `padding={padding}`，当 `padding` 为 `undefined` 时 Scripting 的 `VStack` 渲染失败、**整个组件静默返回空**（连背景色盒都不出现，非 0 宽/布局问题）。现象：展开态 `<Title compact/>` 没传 padding→歌名/艺人空白；收起态传了 `padding={{top:24}}`→正常。修复：`{...(padding ? { padding } : {})}` 条件展开，undefined 时不传该 prop。**教训**：可选布局 prop（padding/frame 等）为 undefined 时不要直接透传给底层组件，用条件展开。二分定位靠隔离 preview（纯 mock 正常→真实组件空→套背景色确认抛错→逐 prop 试）。
 
 ### 播放器核心逻辑（`class/player.ts`，2026-06-30 对抗性修复）
 
@@ -233,6 +232,22 @@
 - JSX props 不支持的字段可能被静默丢或引发奇怪 build 错；临时 preview 需建 default-export wrapper。
 - 孤立 TS 诊断会对单文件相对导入报假阳性；以 `preview_ui` 编译整依赖链为准。
 
+## 待播列表页（`page/player/queue.tsx`，spec `2026-07-01_23-57`）
+
+- 从播放页工具栏 `list.bullet` 弹出的 sheet（`control.tsx` 管理 `showQueue`）。
+- 原手写极简 UI（纯文字 + systemPink 高亮 + 文字播放模式按钮）已废弃，统一到全局设计语言：
+  - 复用 `SongRow`，`onTap` 映射真实队列 index（`即将播放[i]` 真实 index = `currentIndex+1+i`）。
+  - 分区：「正在播放」（不可移除）+ 「即将播放 · N 首」。
+  - 高亮统一 `accentColor`+`waveform`（废弃 systemPink）。
+- **右滑/⻰Menu = 移除出待播列表，不是删库中歌**：`hideDefaultDelete` + `extraMenuItems`/`trailingSwipe` 覆盖。
+- `class/player.ts` 新增 **`removeFromQueue(index)`**：边界校验 + splice + currentIndex 位移/clamp 保险 + `resetShuffleHistory` + 持久化 `STORAGE_QUEUE_KEY/INDEX_KEY` + `onQueueChange`。UI 只对 `index>currentIndex` 调用 → currentIndex 恒不变、**播放绝不中断**（方法本身对任意 index 健壮，含删当前曲 clamp，供未来复用）。
+- 空态用官方 `ContentUnavailableView` 作 overlay（**坑**：`EmptyState`（无背景 + `maxHeight:Infinity`）作 List overlay 在首帧→更新帧过渡时会与列表叠加残留；overlay 空态用 `ContentUnavailableView` 才能非空时正确隐藏）。
+- 播放模式入口改为 toolbar `topBarTrailing` 的 `Menu`（图标随模式切换 + 列四种可选），与库页/播放页工具栏语言对齐。
+- **对抗性 review 修复**：
+  - 队列可含**未入库曲**（发现页 itunes_preview 试听/在线曲）；收藏/加歌单前必须 `database.getMusic` 判断，非入库曲 `Dialog.alert` 提示（`addMusicToPlaylist` 对不存在 music 会 **throw**；`toggleFavorite` 对 null 静默 return false）。
+  - 队列**允许同曲重复**（addToQueue/playNext 不去重）：`key`/`itemId` 必须用 `${music.id}#${realIdx}`，不能用裸 `music.id`（会 key 冲突/行串扰）。
+  - shuffle 模式下真实下一首由 `nextShuffleIndex` 即时随机，`queue.slice` 顺序不代表播放顺序 → header 降级文案「队列 · N 首（随机播放）」。
+
 ## Specs
 
 - `mydocs/specs/2026-06-29_12-55_MP3JuiceSource.md`
@@ -245,3 +260,4 @@
 - `mydocs/specs/2026-06-30_23-56_PlayerEntityNav_SearchEntityModes.md`
 - `mydocs/specs/2026-07-01_07-43_OnlineArtistAlbumSearch_SheetTint.md`
 - `mydocs/specs/2026-07-01_08-56_DownloadCenter.md`
+- `mydocs/specs/2026-07-01_23-57_QueueSheetRedesign.md`

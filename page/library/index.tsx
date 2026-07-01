@@ -2,6 +2,7 @@ import {
   Button, ContentUnavailableView, HStack, Image, Label, List, Menu,
   NavigationLink, ProgressView, ScrollView, Section, Spacer, Toolbar,
   ToolbarItem, useEffect, useState, Text,
+  ToolbarSpacer,
 } from "scripting"
 import { database, Music, Playlist } from "../../class/database"
 import { player } from "../../class/player"
@@ -146,20 +147,21 @@ export function LibraryView() {
   const toolbarEl = (
     <Toolbar>
       <ToolbarItem placement="topBarTrailing">
-        <HStack spacing={12}>
-          <NavigationLink destination={<DownloadCenterView />}>
-            <HStack spacing={3}>
-              <Image systemName="arrow.down.circle" />
-              {activeCount > 0 && (
-                <Text font="footnote" fontWeight="semibold" foregroundStyle="systemPink">{String(activeCount)}</Text>
-              )}
-            </HStack>
-          </NavigationLink>
-          <Menu label={<Image systemName="play.circle" />}>
-            <Button title="播放全部" systemImage="play.fill" action={() => playAll(false)} />
-            <Button title="随机播放" systemImage="shuffle" action={() => playAll(true)} />
-          </Menu>
-        </HStack>
+        <NavigationLink destination={<DownloadCenterView />}>
+          <HStack spacing={3}>
+            <Image systemName="arrow.down.circle" />
+            {activeCount > 0 && (
+              <Text font="footnote" fontWeight="semibold" foregroundStyle="systemPink">{String(activeCount)}</Text>
+            )}
+          </HStack>
+        </NavigationLink>
+      </ToolbarItem>
+
+      <ToolbarItem placement="topBarTrailing">
+        <Menu label={<Image systemName="play.circle" />}>
+          <Button title="播放全部" systemImage="play.fill" action={() => playAll(false)} />
+          <Button title="随机播放" systemImage="shuffle" action={() => playAll(true)} />
+        </Menu>
       </ToolbarItem>
     </Toolbar>
   )
@@ -181,7 +183,7 @@ export function LibraryView() {
       toolbar={toolbarEl}
     >
       {/* A — 快捷入口宫格 */}
-      <Section listRowInsets={{ horizontal: 16, vertical: 6 } as any} listRowSeparator="hidden">
+      <Section listRowInsets={16 as any} listRowSeparator="hidden">
         <QuickEntryGrid entries={quickEntries} />
       </Section>
 
@@ -198,7 +200,7 @@ export function LibraryView() {
           }
         >
           <ScrollView axes="horizontal" listRowInsets={0} listRowSeparator="hidden">
-            <HStack spacing={14} padding={{ horizontal: 16, vertical: 6 }}>
+            <HStack spacing={14} padding={16}>
               {data.recentlyAdded.map(m => (
                 <RecentlyAddedCard
                   key={m.id}
@@ -226,7 +228,7 @@ export function LibraryView() {
           }
         >
           <ScrollView axes="horizontal" listRowInsets={0} listRowSeparator="hidden">
-            <HStack spacing={14} padding={{ horizontal: 16, vertical: 6 }}>
+            <HStack spacing={14} padding={16}>
               {data.artistCards.map(c => (
                 <ArtistCircleCard
                   key={c.artist}
@@ -253,7 +255,7 @@ export function LibraryView() {
           }
         >
           <ScrollView axes="horizontal" listRowInsets={0} listRowSeparator="hidden">
-            <HStack spacing={14} padding={{ horizontal: 16, vertical: 6 }}>
+            <HStack spacing={14} padding={16}>
               {data.albumCards.map(c => (
                 <AlbumCoverCard
                   key={`${c.album}-${c.artist}`}
@@ -281,7 +283,7 @@ export function LibraryView() {
           }
         >
           <ScrollView axes="horizontal" listRowInsets={0} listRowSeparator="hidden">
-            <HStack spacing={14} padding={{ horizontal: 16, vertical: 6 }}>
+            <HStack spacing={14} padding={16}>
               {data.playlistCards.map(c => (
                 <PlaylistCollageCard
                   key={c.playlist.id}

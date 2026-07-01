@@ -177,9 +177,6 @@ export function RecentlyAddedCard({ music, coverExists, isPlaying, onTap }: Rece
         <Text font="subheadline" fontWeight="semibold" lineLimit={1} foregroundStyle={isPlaying ? "systemPink" : "label"}>
           {music.title}
         </Text>
-        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>
-          {music.artist}
-        </Text>
       </VStack>
     </Button>
   )
@@ -427,7 +424,6 @@ export function ArtistCircleCard({ artist, count, destination }: { artist: strin
           <Image systemName="person.circle.fill" font={{ name: "system", size: DIAM }} foregroundStyle="accentColor" frame={{ width: DIAM, height: DIAM }} />
         )}
         <Text font="subheadline" fontWeight="semibold" lineLimit={1} multilineTextAlignment="center" frame={{ width: DIAM }}>{artist}</Text>
-        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>{`${count} 首`}</Text>
       </VStack>
     </NavigationLink>
   )
@@ -469,7 +465,6 @@ export function AlbumCoverCard({ album, artist, musics, destination }: { album: 
           <Image systemName="square.stack.fill" font="largeTitle" tint="secondaryLabel" frame={{ width: SIZE, height: SIZE }} background="secondarySystemBackground" clipShape={clip} />
         )}
         <Text font="subheadline" fontWeight="semibold" lineLimit={1} frame={{ width: SIZE }}>{album}</Text>
-        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1} frame={{ width: SIZE }}>{artist}</Text>
       </VStack>
     </NavigationLink>
   )
@@ -484,7 +479,6 @@ export function PlaylistCollageCard({ playlist, musics, destination }: { playlis
       <VStack alignment="leading" spacing={6} frame={{ width: SIZE }}>
         <CoverCollage musics={musics} size={SIZE} cornerRadius={14} />
         <Text font="subheadline" fontWeight="semibold" lineLimit={1} frame={{ width: SIZE }}>{playlist.name}</Text>
-        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>{`${playlist.music_count} 首`}</Text>
       </VStack>
     </NavigationLink>
   )

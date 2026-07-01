@@ -182,6 +182,28 @@ class Player {
     Storage.set(Player.STORAGE_QUEUE_KEY, this.queue)
   }
 
+  /**
+   * 从待播队列移除指定 index 的歌曲。
+   *
+   * 待播列表 UI 只对「即将播放」（index > currentIndex）调用，此时 currentIndex 不变、播放不中断。
+   * 方法本身对任意 index 健壮：删当前曲之前的项会前移 currentIndex；删当前曲会 clamp 到有效范围（不主动切歌，交由调用方决定）。
+   */
+  removeFromQueue(index: number): void {
+    if (index < 0 || index >= this.queue.length) return
+    this.queue.splice(index, 1)
+    if (index < this.currentIndex) {
+      this.currentIndex--
+    } else if (index === this.currentIndex) {
+      // 保险分支：UI 不会删当前曲。clamp 到队列范围，避免越界。
+      if (this.currentIndex > this.queue.length - 1) this.currentIndex = this.queue.length - 1
+    }
+    // 队列结构变更 → 重置 shuffle 历史，避免裸 index 访问序失配。
+    this.resetShuffleHistory()
+    Storage.set(Player.STORAGE_QUEUE_KEY, this.queue)
+    Storage.set(Player.STORAGE_INDEX_KEY, this.currentIndex)
+    this.listeners.forEach(l => l.onQueueChange?.(this.queue))
+  }
+
   async playNext(music: Music): Promise<void> {
     const insertIndex = this.currentIndex < 0 ? 0 : this.currentIndex + 1
     this.queue.splice(insertIndex, 0, music)
