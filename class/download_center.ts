@@ -38,6 +38,12 @@ export type DownloadCenterItem = {
   progress: number // 0..1
   status: DownloadStatus
   error?: string
+  /** 已下字节（用于无 content-length 时展示 MB） */
+  received?: number
+  /** 总字节；0/undefined 表示未知（直链无 content-length），UI 走不确定进度 */
+  total?: number
+  /** 是否处于「解析真实直链」准备阶段（还没进入 fetch 流） */
+  preparing?: boolean
 }
 
 type Awaiter = { resolve: () => void; reject: (e: any) => void }
@@ -191,8 +197,12 @@ class DownloadCenter {
     const item = this.items.get(id)
     if (!item) return
 
+    // 未进入 fetch 流前（要先解析真实直链）标记为准备中，避免 UI 看上去像 0% 卡住。
+    item.preparing = true
+    this.notify()
+
     // 桥接引擎进度到本 store。
-    const unsub = fetchDownloader.onProgress(id, (progress, status) => this.onEngineProgress(id, progress, status))
+    const unsub = fetchDownloader.onProgress(id, (progress, status, received, total) => this.onEngineProgress(id, progress, status, received, total))
     this.unsubProgress.set(id, unsub)
 
     fetchDownloader.downloadMusic(item.info as any).catch((e) => {
@@ -200,6 +210,7 @@ class DownloadCenter {
       const it = this.items.get(id)
       if (it && (it.status === "downloading" || it.status === "queued")) {
         it.status = "failed"
+        it.preparing = false
         it.error = e instanceof Error ? e.message : String(e)
         this.settle(id, false, it.error)
       }
@@ -214,7 +225,7 @@ class DownloadCenter {
     this.pump()
   }
 
-  /** 结算 terminal：释放槽 + resolve/reject awaiter + pump。 */
+  /** 结算 terminal：释放槽 + resolve/reject awaiter + pump。completed 延时自清。 */
   private settle(id: string, ok: boolean, error?: string) {
     this.active.delete(id)
     const unsub = this.unsubProgress.get(id)
@@ -227,6 +238,19 @@ class DownloadCenter {
     }
     this.notify()
     this.pump()
+    // 完成项 5s 后自动移除（避免新下载时还看到旧的已完成）。
+    const it = this.items.get(id)
+    if (it && it.status === "completed") {
+      const scheduledId = id
+      setTimeout(() => {
+        const cur = this.items.get(scheduledId)
+        if (cur && cur.status === "completed") {
+          this.items.delete(scheduledId)
+          this.order = this.order.filter(x => x !== scheduledId)
+          this.notify()
+        }
+      }, 5000)
+    }
   }
 
   // ===== 控制 =====
@@ -254,7 +278,7 @@ class DownloadCenter {
       this.active.add(id)
       const unsub = this.unsubProgress.get(id)
       if (!unsub) {
-        const u = fetchDownloader.onProgress(id, (progress, status) => this.onEngineProgress(id, progress, status))
+        const u = fetchDownloader.onProgress(id, (progress, status, received, total) => this.onEngineProgress(id, progress, status, received, total))
         this.unsubProgress.set(id, u)
       }
       this.notify()
@@ -276,14 +300,24 @@ class DownloadCenter {
   }
 
   /** resume 场景复用的引擎进度桥（与 start 内联逻辑一致）。 */
-  private onEngineProgress(id: string, progress: number, status: string) {
+  private onEngineProgress(id: string, progress: number, status: string, received?: number, total?: number) {
     const it = this.items.get(id)
     if (!it) return
-    if (status === "downloading") { it.progress = progress; it.status = "downloading"; this.notify() }
-    else if (status === "paused") { it.progress = progress; it.status = "paused"; this.freeSlot(id); this.notify() }
-    else if (status === "completed") { it.progress = 1; it.status = "completed"; this.settle(id, true) }
-    else if (status === "failed") { it.status = "failed"; this.settle(id, false, "下载失败") }
-    else if (status === "cancelled") { it.status = "cancelled"; this.settle(id, true) }
+    if (status === "downloading") {
+      it.progress = progress; it.status = "downloading"; it.preparing = false
+      if (received != null) it.received = received
+      it.total = total && total > 0 ? total : 0
+      this.notify()
+    }
+    else if (status === "paused") {
+      it.progress = progress; it.status = "paused"; it.preparing = false
+      if (received != null) it.received = received
+      it.total = total && total > 0 ? total : 0
+      this.freeSlot(id); this.notify()
+    }
+    else if (status === "completed") { it.progress = 1; it.status = "completed"; it.preparing = false; this.settle(id, true) }
+    else if (status === "failed") { it.status = "failed"; it.preparing = false; this.settle(id, false, "下载失败") }
+    else if (status === "cancelled") { it.status = "cancelled"; it.preparing = false; this.settle(id, true) }
   }
 
   async cancel(id: string) {

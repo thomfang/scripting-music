@@ -147,14 +147,14 @@ export function LibraryView() {
     <Toolbar>
       <ToolbarItem placement="topBarTrailing">
         <HStack spacing={12}>
-          {activeCount > 0 && (
-            <NavigationLink destination={<DownloadCenterView />}>
-              <HStack spacing={3}>
-                <Image systemName="arrow.down.circle" />
+          <NavigationLink destination={<DownloadCenterView />}>
+            <HStack spacing={3}>
+              <Image systemName="arrow.down.circle" />
+              {activeCount > 0 && (
                 <Text font="footnote" fontWeight="semibold" foregroundStyle="systemPink">{String(activeCount)}</Text>
-              </HStack>
-            </NavigationLink>
-          )}
+              )}
+            </HStack>
+          </NavigationLink>
           <Menu label={<Image systemName="play.circle" />}>
             <Button title="播放全部" systemImage="play.fill" action={() => playAll(false)} />
             <Button title="随机播放" systemImage="shuffle" action={() => playAll(true)} />

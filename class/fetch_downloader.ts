@@ -34,7 +34,7 @@ type DownloadTask = {
   partUrl?: string
 }
 
-type ProgressCallback = (progress: number, status: "downloading" | "completed" | "failed" | "cancelled" | "paused") => void
+type ProgressCallback = (progress: number, status: "downloading" | "completed" | "failed" | "cancelled" | "paused", received?: number, total?: number) => void
 
 class FetchDownloader {
   private tasks = new Map<string, DownloadTask>()
@@ -264,7 +264,7 @@ class FetchDownloader {
           console.log(`[下载暂停] ${musicInfo.title}（保留 part ${downloadedBytes}/${total}）`)
           const p = total > 0 ? (downloadedBytes / total) * 100 : 0
           await database.updateDownloadTask(taskId, "paused", p)
-          this.progressCallbacks.get(musicId)?.(p / 100, "paused")
+          this.progressCallbacks.get(musicId)?.(p / 100, "paused", downloadedBytes, total)
           try { await reader.cancel() } catch {}
           return
         }
@@ -286,7 +286,7 @@ class FetchDownloader {
           console.log(`[下载进度] ${musicInfo.title}: ${Math.floor(progress)}% (${downloadedBytes}/${total})`)
         }
         await database.updateDownloadTask(taskId, "downloading", progress)
-        this.progressCallbacks.get(musicId)?.(progress / 100, "downloading")
+        this.progressCallbacks.get(musicId)?.(progress / 100, "downloading", downloadedBytes, total)
       }
 
       const finalBytes = await fileManager.readPart(musicId)

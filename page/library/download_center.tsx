@@ -7,11 +7,21 @@ import { useDownloadCenter } from "../../class/use_download_center"
 import { fileManager } from "../../class/file_manager"
 import { EmptyState } from "../components/empty_state"
 
+function fmtMB(bytes?: number): string {
+  if (!bytes || bytes <= 0) return "0 MB"
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function statusText(it: DownloadCenterItem): string {
   switch (it.status) {
     case "queued": return "等待中…"
-    case "downloading": return `下载中 ${Math.round(it.progress * 100)}%`
-    case "paused": return `已暂停 ${Math.round(it.progress * 100)}%`
+    case "downloading":
+      if (it.preparing) return "准备中…"
+      if (it.total && it.total > 0) return `下载中 ${Math.round(it.progress * 100)}%`
+      return `下载中 ${fmtMB(it.received)}`
+    case "paused":
+      if (it.total && it.total > 0) return `已暂停 ${Math.round(it.progress * 100)}%`
+      return `已暂停 ${fmtMB(it.received)}`
     case "completed": return "已完成"
     case "failed": return it.error ? `失败：${it.error}` : "下载失败"
     case "cancelled": return "已取消"
@@ -41,7 +51,11 @@ function DownloadItemRow({ it }: { it: DownloadCenterItem }) {
         <Text font="subheadline" fontWeight="medium" lineLimit={1}>{it.info.title}</Text>
         <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>{it.info.artist}</Text>
         {(it.status === "downloading" || it.status === "paused" || it.status === "queued") && (
-          <ProgressView value={Math.max(0, Math.min(1, it.progress))} total={1} tint="systemPink" />
+          (it.total && it.total > 0)
+            ? <ProgressView value={Math.max(0, Math.min(1, it.progress))} total={1} tint="systemPink" />
+            : (it.status === "downloading" && !it.preparing)
+              ? <ProgressView tint="systemPink" />
+              : null
         )}
         <Text font="caption2" foregroundStyle={statusColor(it.status) as any}>{statusText(it)}</Text>
       </VStack>
