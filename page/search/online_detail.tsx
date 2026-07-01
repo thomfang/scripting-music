@@ -1,6 +1,6 @@
 import {
   List, Section, Button, Label, Group, HStack, VStack, ZStack, Rectangle, Spacer, Text, Image,
-  NavigationLink, ProgressView, useEffect, useState,
+  NavigationLink, ProgressView, useEffect, useRef, useState,
 } from "scripting"
 import { Music, database } from "../../class/database"
 import { player } from "../../class/player"
@@ -39,10 +39,31 @@ function CenterState({ icon, text }: { icon: string, text: string }) {
 
 // ---------------- 在线专辑详情 ----------------
 
-/** 归一化标题用于“正在播放”匹配（真实源 id 与 iTunes trackId 不同，不能比 id）。 */
+/** 归一化标题/艺人用于“正在播放”匹配。 */
 function normTitle(s: string | undefined): string {
   return (s || "").trim().toLowerCase()
 }
+
+/**
+ * 判断当前播放曲目是否为该 iTunes 曲目。
+ * 真实源 id 与 iTunes trackId 不同，无法比 id；且真实源 title 是 mp3juice
+ * 原始标题（可能含 “艺人 - ” 前缀 / “(Official)” 噪声），iTunes title 是干净标题。
+ * 故用包含式 title 匹配 + 富化后 artist 校验（artist 富化后即 iTunes artistName，可靠）。
+ */
+function isSameTrack(cur: { title?: string, artist?: string } | null | undefined, track: ItunesTrack): boolean {
+  if (!cur) return false
+  const ct = normTitle(cur.title), tt = normTitle(track.title)
+  if (!ct || !tt) return false
+  const titleMatch = ct === tt || ct.includes(tt) || tt.includes(ct)
+  if (!titleMatch) return false
+  const ca = normTitle(cur.artist), ta = normTitle(track.artist)
+  // artist 任一缺失则只认 title；否则要求包含式相等，避免同名不同艺人误配。
+  return !ca || !ta || ca === ta || ca.includes(ta) || ta.includes(ca)
+}
+
+// 队列构建令牌：playAll 后台逐首入队期间，任何新的 playAll / 单曲播放都会
+// bump 它，使过期的后台 loop 停止向已被替换的队列继续 addToQueue（防队列污染）。
+let queueBuildToken = 0
 
 export function OnlineAlbumDetail({ album, artist, collectionId, cover }: {
   album: string, artist: string, collectionId: number, cover?: string
@@ -69,22 +90,27 @@ export function OnlineAlbumDetail({ album, artist, collectionId, cover }: {
   async function playAll(shuffle: boolean) {
     if (busyAll || tracks.length === 0) return
     setBusyAll(true)
+    // 本次队列构建的身份；后台 loop 每次 addToQueue 前校验，过期则停止。
+    const myToken = ++queueBuildToken
     try {
       const order = shuffle ? [...tracks].sort(() => Math.random() - 0.5) : tracks
       const first = await resolveRealMusic({
         title: order[0].title, artist: order[0].artist, album: order[0].album,
         duration: order[0].duration, cover: order[0].cover ?? effectiveCover,
       })
+      if (myToken !== queueBuildToken) return // 解析首曲期间已被新操作接管
       if (!first) return
       player.setQueue([first], 0)
       await player.play(first)
-      // 后台解析其余曲目，逐首入队
+      // 后台解析其余曲目，逐首入队（校验 token，防队列污染）
       ;(async () => {
         for (let i = 1; i < order.length; i++) {
+          if (myToken !== queueBuildToken) return
           const m = await resolveRealMusic({
             title: order[i].title, artist: order[i].artist, album: order[i].album,
             duration: order[i].duration, cover: order[i].cover ?? effectiveCover,
           })
+          if (myToken !== queueBuildToken) return
           if (m) player.addToQueue(m)
         }
       })()
@@ -180,7 +206,7 @@ export function OnlineAlbumDetail({ album, artist, collectionId, cover }: {
                 key={String(t.trackId)}
                 track={t}
                 fallbackCover={effectiveCover}
-                isPlaying={normTitle(state.currentMusic?.title) === normTitle(t.title)}
+                isPlaying={isSameTrack(state.currentMusic, t)}
                 onAddToPlaylist={() => { setPendingTrack(t); setShowPlaylistPicker(true) }}
               />
             ))}
@@ -204,11 +230,24 @@ function OnlineTrackRow({ track, fallbackCover, isPlaying, onAddToPlaylist }: {
   const [downloaded, setDownloaded] = useState(false)
   const [failed, setFailed] = useState(false)
   const [coverError, setCoverError] = useState(false)
+  const mounted = useRef(true)
+  const failTimer = useRef<number | null>(null)
+  useEffect(() => () => {
+    mounted.current = false
+    if (failTimer.current != null) clearTimeout(failTimer.current)
+  }, [])
   const cover = track.cover ?? fallbackCover
 
   const meta = {
     title: track.title, artist: track.artist, album: track.album,
     duration: track.duration, cover,
+  }
+
+  function flagFailed() {
+    if (!mounted.current) return
+    setFailed(true)
+    if (failTimer.current != null) clearTimeout(failTimer.current)
+    failTimer.current = setTimeout(() => { if (mounted.current) setFailed(false) }, 2500) as unknown as number
   }
 
   async function withResolve<T>(fn: (m: Music) => Promise<T>) {
@@ -217,17 +256,18 @@ function OnlineTrackRow({ track, fallbackCover, isPlaying, onAddToPlaylist }: {
     setFailed(false)
     try {
       const real = await resolveRealMusic(meta)
-      if (!real) { setFailed(true); setTimeout(() => setFailed(false), 2500); return }
+      if (!real) { flagFailed(); return }
       await fn(real)
     } catch (e) {
       console.error("[在线曲目] 操作失败:", e)
-      setFailed(true); setTimeout(() => setFailed(false), 2500)
+      flagFailed()
     } finally {
-      setResolving(false)
+      if (mounted.current) setResolving(false)
     }
   }
 
-  const play = () => withResolve(async (real) => { await player.playNext(real) })
+  // 单曲播放：插队播放；bump 队列令牌，阻止旧 playAll 后台 loop 继续污染队列。
+  const play = () => withResolve(async (real) => { queueBuildToken++; await player.playNext(real) })
 
   const download = () => withResolve(async (real) => {
     const existing = await database.getMusic(real.id)
@@ -244,7 +284,7 @@ function OnlineTrackRow({ track, fallbackCover, isPlaying, onAddToPlaylist }: {
       artist: real.artist, album: real.album, duration: real.duration,
       cover: real.cover_url ?? "", source_id: real.source_id,
     })
-    setDownloaded(true)
+    if (mounted.current) setDownloaded(true)
   })
 
   return (
