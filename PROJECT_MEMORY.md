@@ -167,6 +167,14 @@
 - **断点续传（`fetch_downloader.ts` + `file_manager.ts`）**：新增 `<root>/downloads/<id>.part` 落盘（`appendPart` 用 `FileManager.appendData(Data.fromUint8Array)`，回退读+拼+写）。`performDownload` 改落盘式：part 存在且 `partUrl===当前解析URL` → 发 `Range: bytes=<offset>-`；**206** 续写（total 从 `Content-Range .../total` 解析）、**offset>0 但返回 200**（服务端忽略 Range）→ 删 part 从头重下。暂停保留 part/task/cb（不删）；`resume` 同会话走 `resumeDownload`（part 命中续），跨对账/被杀走 fresh `enqueue`/`start`（换 URL 自动重下）。取消删 part；失败**不删** part（便于重试续）。mp3juice 直链每次 resolve 可能换 CDN，换 URL 即重下（安全）。
 - **调用点**：`all_songs/favorites/playlists/discover/online_detail/search_result_card/player/control` + `batch_download_helper.runBatchDownload`（改 center.enqueue 并发聚合）全部统一走 center；`download_manager.ts`（=fetchDownloader 别名）仍被 search_result_card `isDownloaded` 等只读用。
 - **根 init**：`index.tsx` 在 `player.init()`(内含 database.init)+`downloadManager.init()` 后 `await downloadCenter.init()`。
+- **迭代修复**（127e6670/66c6285f/7c05fb5d/f8d2a118/a2d275d4）：
+  - 入口改常显（不再随任务数隐藏，防完成后页面空白）；数字徒随 activeCount 显隐。
+  - 进度回调带字节数（received/total）；直链无 content-length 时显示已下 MB + 不确定进度条，解析阶段显「准备中」。完成项 5s 自清。
+  - **进度不刷新坑**：`getItems()` 必须返回浅拷贝（store 原地改属性，同引用会被 React diff 跳过）。
+  - **取消坑**：abort 信号在部分环境不能中断已开始的 body 流 → 取消改用循环内 `isCancelled` 标志（与暂停同机制）+ 流末入库前守卫；abort 保留作双保险。
+  - **不预入库**（discover/online_detail 下载路径）：歌只在 `processDownloadedFile` 成功时 `addMusic(is_downloaded:true)`，取消/失败不在「最近添加」留残；加歌单路径仍预入库但都有 `if(!existing)` 守卫。
+  - 新增 `RecentlyAddedView`（smart_playlists.tsx，getAllMusic 前50）；首页「最近添加」see-all 指向它（原误指全部歌曲）。
+  - **对抗性 review 修复 a2d275d4**：P1-A `download_task` 行不再只增不减——`createDownloadTask` 先删同 musicId 旧行（幂等）+ terminal(完成/取消/abort/暂停态取消) 删 DB 行；`search_result_card` 终态改用 `enqueue` promise + `isDownloaded` 判定（不再靠 DB 行，因终态行已删）。P2-A `enqueue` 多调用方共享同一 terminal（awaiters 改数组，addAwaiter/settleAwaiters），不再误 resolve 旧 awaiter。P3-A `resume` 受 concurrency 约束（满则回队）；`runEngine` 对引擎已有活体 task 改调 `resumeDownload`（防 `downloadMusic` 因 `tasks.has` 静默早退导致 item 卡死）；启动清理孤儿 `.part`（`fileManager.listPartIds`）。P3-B `database.addMusic` upsert 用 `is_downloaded=MAX(...)` + `file_size=CASE WHEN excluded.is_downloaded=1` 防降级。
 
 
 ### 数据源
