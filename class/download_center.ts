@@ -72,7 +72,9 @@ class DownloadCenter {
   }
 
   getItems(): DownloadCenterItem[] {
-    return this.order.map(id => this.items.get(id)!).filter(Boolean)
+    // 返回浅拷贝：store 内部是原地改属性，若直接返回同引用，
+    // React diff 会认为行 props 未变而跳过重渲染（进度/MB 定住不动）。
+    return this.order.map(id => this.items.get(id)).filter(Boolean).map(it => ({ ...it! }))
   }
 
   /** 决定入口显隐：queued/downloading/paused/failed 视为「有任务」，completed/cancelled 不计。 */
