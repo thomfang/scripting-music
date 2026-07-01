@@ -30,6 +30,8 @@ type DownloadTask = {
   musicInfo: MusicInfo
   abortController: AbortController
   isPaused: boolean
+  /** 取消标志：与 isPaused 同机制，在读流循环里检查（abort 信号在部分环境不能中断已开始的 body 流）。 */
+  isCancelled?: boolean
   /** 当前 part 文件对应的已解析直链 URL；与本次 audio_url 不符则不能用 Range 续传。 */
   partUrl?: string
 }
@@ -260,6 +262,17 @@ class FetchDownloader {
       if (!stream) throw new Error("response 没有可读流（body/dataStream 均为空）")
       const reader = stream.getReader()
       while (true) {
+        if (task.isCancelled) {
+          console.log(`[下载取消（标志）] ${musicInfo.title}`)
+          try { await reader.cancel() } catch {}
+          await database.updateDownloadTask(taskId, "cancelled", 0)
+          await fileManager.deletePart(musicId)
+          this.progressCallbacks.get(musicId)?.(0, "cancelled")
+          this.progressCallbacks.delete(musicId)
+          this.tasks.delete(musicId)
+          await this.stopBackgroundKeeperIfNeeded()
+          return
+        }
         if (task.isPaused) {
           console.log(`[下载暂停] ${musicInfo.title}（保留 part ${downloadedBytes}/${total}）`)
           const p = total > 0 ? (downloadedBytes / total) * 100 : 0
@@ -290,6 +303,17 @@ class FetchDownloader {
       }
 
       const finalBytes = await fileManager.readPart(musicId)
+      // 流末可能刚好碰上取消：入库前再查一次，避免已取消却仍写入。
+      if (task.isCancelled) {
+        console.log(`[下载取消（流末）] ${musicInfo.title}`)
+        await database.updateDownloadTask(taskId, "cancelled", 0)
+        await fileManager.deletePart(musicId)
+        this.progressCallbacks.get(musicId)?.(0, "cancelled")
+        this.progressCallbacks.delete(musicId)
+        this.tasks.delete(musicId)
+        await this.stopBackgroundKeeperIfNeeded()
+        return
+      }
       console.log(`[下载完成] ${musicInfo.title} - 总大小: ${finalBytes.length} 字节`)
       await this.processDownloadedFile(musicId, [finalBytes])
       await fileManager.deletePart(musicId)
@@ -451,6 +475,7 @@ class FetchDownloader {
         this.tasks.delete(musicId)
         await this.stopBackgroundKeeperIfNeeded()
       } else {
+        task.isCancelled = true
         task.abortController.abort()
         console.log(`[取消下载] ${task.musicInfo.title}`)
       }
