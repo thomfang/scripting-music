@@ -35,15 +35,19 @@ function PlayerPage() {
   }
   const closeEntity = () => setEntityNav(null)
 
-  const coverMaxHeight = lyricExpanded ? 0 : 320
+  const coverBig = Device.screen.width - 48
   const lyricHeight = lyricExpanded ? Math.round(Device.screen.height * 0.46) : 150
   const expandAnim = { animation: Animation.smooth({ duration: 0.45 }), value: lyricExpanded }
+  const toggleLyric = () => {
+    // 用 withAnimation 包住 state 切换，让大/小封面通过 matchedGeometryEffect 做 Hero 形变（平滑缩放+位移）。
+    withAnimation(Animation.smooth({ duration: 0.45 }), () => setLyricExpanded(v => !v))
+  }
   return (
     <ZStack
       sheet={{
         isPresented: entityNav !== null,
         onChanged: (v: boolean) => { if (!v) closeEntity() },
-        content: entityNav === null ? null
+        content: entityNav === null ? <VStack />
           : entityNav.kind === "artist"
             ? <PlayerArtistSheet artist={entityNav.artist} onDismiss={closeEntity} />
             : <PlayerAlbumSheet album={entityNav.album} artist={entityNav.artist} onDismiss={closeEntity} />
@@ -69,7 +73,9 @@ function PlayerPage() {
           padding={{ top: 10, bottom: 20 }}
         />
 
-        {/* 头部：未展开=大封面在上 + 标题在下；展开=小封面收到标题左侧（Apple Music 歌词态） */}
+        {/* 头部：未展开=大封面在上 + 标题在下；展开=小封面收到标题左侧（Apple Music 歌词态）。
+            注：不用 matchedGeometryEffect——它在条件分支（HStack↔VStack）间会把视图整棵移除/重建，
+            导致封面+标题空白；改用 withAnimation + 容器 animation 做简单缩放/淡入过渡。 */}
         {lyricExpanded ? (
           <HStack
             spacing={12}
@@ -78,20 +84,18 @@ function PlayerPage() {
             animation={expandAnim}
           >
             <Cover
-              frame={{ width: 56, height: 56 }}
-              aspectRatio={{ value: 1, contentMode: "fit" }}
-              clipShape={{ type: "rect", cornerRadius: 8 }}
+              size={56}
+              cornerRadius={8}
               shadow={{ color: "rgba(0,0,0,0.4)", radius: 8, y: 3 }}
             />
             <Title compact={true} onArtistTap={openArtist} />
           </HStack>
         ) : (
           <VStack spacing={0} frame={{ maxWidth: "infinity" }} animation={expandAnim}>
-            {/* 专辑封面：大尺寸方形 + 柔和投影 */}
+            {/* 专辑封面：大尺寸正方形 + 柔和投影 */}
             <Cover
-              frame={{ maxWidth: "infinity", maxHeight: coverMaxHeight }}
-              aspectRatio={{ value: 1, contentMode: "fit" }}
-              clipShape={{ type: "rect", cornerRadius: 14 }}
+              size={coverBig}
+              cornerRadius={14}
               shadow={{ color: "rgba(0,0,0,0.45)", radius: 30, y: 14 }}
             />
             {/* 标题（紧跟封面，如 Apple Music） */}
@@ -105,7 +109,7 @@ function PlayerPage() {
         <Lyric
           key={currentMusic?.id ?? "none"}
           height={lyricHeight}
-          onToggle={() => setLyricExpanded(v => !v)}
+          onToggle={toggleLyric}
           animation={expandAnim}
         />
         <Spacer />

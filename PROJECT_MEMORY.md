@@ -88,12 +88,21 @@
 
 - 背景：`CoverBackground` 铺满；有封面=放大模糊封面 + MeshGradient 增色 + SCRIM；无封面=彩色 Mesh。
 - MeshGradient 是 `ShapeStyle` 对象（`{width,height,points,colors,smoothsColors}`），直接 `Rectangle fill={mesh as any}`，不是 JSX 组件。
+- **MeshGradient 点位历史坑（已随 App 更新修复）**：早期 Scripting 的 MeshGradient 只能渲染「完全规则网格」，任何 point 偏离（哪怕中心 0.5→0.52）整块渲染纯黑；曾误以为是硬约束。开发者已修复，现 preview_ui 实测：位移点位 + 全点漂移均正常渲染并真实形变。
+- 现「流动背景」采用**点位形变 + 色相漂移**结合（`cover.tsx`）：
+  - `pointsAt(phase)`：四角钉死 0/1；边中点只沿边**切向**滑动（顶/底边只动 x、左/右边只动 y，法向恒 0/1）→ 四条边界始终贴框、**零露边**；中心点自由大幅游走。
+  - `colorsAt(phase)`：9 顶点 HSL 色相各自异向连续偏移（`HUE_SPEED`）。
+  - 靠 `useFlowPhase` 高频（120ms）setState 驱动；`animation` prop 不会对 fill 内 points/colors 插值，必须自己高频重算。
+  - `background` 兜底色保留作保险（边界贴框后其实用不到）。
 - `Animation` prop 要给实例：`{animation: Animation.smooth({duration}), value}`。
 - `AVPlayer` 无播放流 metering/level/power；`onLevelUpdate`/`averagePower`/`peakPower` 只在录音/离线分析侧。因此背景只能时间驱动流动，不能跟真实音量。
 - Scripting 无封面取色 API（UIImage 无 average/dominant/pixel read），用模糊封面/mesh 方案。
 - 横向溢出核心坑：sheet/父视图可能给无限宽，`maxWidth:"infinity"` 不能限制到屏宽；长歌词会撑爆。需显式有限 `width`。
 - 播放页最终用 `Device.screen.width - 48` 收窄根 VStack，保证左右 24pt；不要「先 frame 全屏再外侧 padding」，会被裁。
 - 展开歌词：`lyricExpanded` 时小封面 56pt 收到歌名左侧，Title `compact`；未展开大封面在上。
+- **封面正方形兼容（2026-07-01）**：`Cover` 接收 `{size, cornerRadius?, shadow?, matchedGeometryEffect?}`；结构=**固定边长正方盒**(`ZStack width=height=size`)→`clipShape` 圆角→`shadow`→`scaleEffect` 呼吸→内部 `Image scaleToFill + frame size×size` 填满被裁。任意比例封面(横/竖图)中心裁成正方形，**永不横向溢出**。大封面 `size=Device.screen.width-48`，展开小封面 `size=56`。⚠️ 正方盒必须给**明确边长**——`aspectRatio` 加在无内在尺寸的填充容器上会塌成 0（踩过：大封面 `maxWidth:infinity`+`aspectRatio` 高度塌 0 全空白）。
+- **`matchedGeometryEffect` 跨条件分支不可用**：想用 Hero 让大/小封面在展开/收起间形变，但 `matchedGeometryEffect` 在**条件分支**(`lyricExpanded ? <HStack> : <VStack>`)间会把视图整棵移除/重建，导致封面+标题**全空白**。已放弃 Hero，改用 `withAnimation(Animation.smooth(0.45))` + 容器 `animation` prop 做简单缩放/淡入过渡。`Cover` 的 `matchedGeometryEffect` 保留为可选 prop（不传即忽略）。
+- **`padding={undefined}` 致组件静默崩溃（重要通用坑，2026-07-01）**：`Title` 根 `VStack` 写 `padding={padding}`，当 `padding` 为 `undefined` 时 Scripting 的 `VStack` 渲染失败、**整个组件静默返回空**（连背景色盒都不出现，非 0 宽/布局问题）。现象：展开态 `<Title compact/>` 没传 padding→歌名/艺人空白；收起态传了 `padding={{top:24}}`→正常。修复：`{...(padding ? { padding } : {})}` 条件展开，undefined 时不传该 prop。**教训**：可选布局 prop（padding/frame 等）为 undefined 时不要直接透传给底层组件，用条件展开。二分定位靠隔离 preview（纯 mock 正常→真实组件空→套背景色确认抛错→逐 prop 试）。
 
 ### 播放器核心逻辑（`class/player.ts`，2026-06-30 对抗性修复）
 

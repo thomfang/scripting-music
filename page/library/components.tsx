@@ -90,7 +90,7 @@ function QuickEntryCard({ entry }: { entry: QuickEntry }) {
           <Image systemName={entry.icon} font="body" fontWeight="semibold" foregroundStyle="white" />
         </ZStack>
         <VStack alignment="leading" spacing={1} layoutPriority={1}>
-          <Text font="subheadline" fontWeight="semibold" foregroundStyle="label" lineLimit={1} minimumScaleFactor={0.7}>
+          <Text font="subheadline" fontWeight="semibold" foregroundStyle="label" lineLimit={1} minScaleFactor={0.7}>
             {entry.label}
           </Text>
           {entry.count != null && (
@@ -327,7 +327,7 @@ export type CoverCollageProps = {
   /** 整体边长 */
   size: number
   cornerRadius?: number
-  shadow?: boolean
+  showShadow?: boolean
   /** 高斯模糊半径（用作模糊 banner 背景时） */
   blur?: number
 }
@@ -338,8 +338,8 @@ export type CoverCollageProps = {
  * - 1–3 首 → 单张（第 1 首）
  * - 0 首 → 占位图标
  */
-export function CoverCollage({ musics, size, cornerRadius = 12, shadow = true, blur }: CoverCollageProps) {
-  const shadowProp = shadow ? { color: "rgba(0,0,0,0.22)", radius: 6, x: 0, y: 3 } : undefined
+export function CoverCollage({ musics, size, cornerRadius = 12, showShadow = true, blur }: CoverCollageProps) {
+  const shadowProp = showShadow ? { color: "rgba(0,0,0,0.22)" as any, radius: 6, x: 0, y: 3 } : undefined
   const clip = { type: "rect", cornerRadius } as any
 
   if (musics.length === 0) {

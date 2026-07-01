@@ -47,11 +47,18 @@ export function Lyric({ height = DEFAULT_LYRIC_HEIGHT, onToggle, animation }: { 
 
   // 暂停/seek 时以 Provider 的 currentTime 为准（初始、seek 都会推）
   useEffect(() => { setNow(progressTime) }, [progressTime])
-  // 播放时高频轮询真实播放时间
+  // 播放时高频轮询真实播放时间（Scripting 无 setInterval，用自递归 setTimeout）
   useEffect(() => {
     if (!isPlaying) return
-    const id = setInterval(() => setNow(player.getCurrentTime()), 250)
-    return () => clearInterval(id)
+    let cancelled = false
+    let id = 0
+    const tick = () => {
+      if (cancelled) return
+      setNow(player.getCurrentTime())
+      id = setTimeout(tick, 250)
+    }
+    id = setTimeout(tick, 250)
+    return () => { cancelled = true; clearTimeout(id) }
   }, [isPlaying, currentMusic?.id])
 
   // 切歌时拉取歌词（内存缓存 → 本地 → 在线）
@@ -141,7 +148,7 @@ function LyricTapArea({ children, onToggle, animation }: { children: JSX.Element
 
 function Placeholder({ text, height }: { text: string; height: number }) {
   return (
-    <VStack frame={{ width: "infinity", height }} alignment="center">
+    <VStack frame={{ maxWidth: "infinity", height }} alignment="center">
       <Text foregroundStyle="rgba(255,255,255,0.5)" font="subheadline">{text}</Text>
     </VStack>
   )
@@ -166,15 +173,17 @@ function SyncedLyricList({
   activeIndex: number
   height: number
 }) {
-  // 高亮行变化时自动滚动到中间
+  // 高亮行变化时自动滚动到中间；用 withAnimation 让滚动位移带缓动（scrollTo 本身是瞬时跳）。
   useEffect(() => {
     if (activeIndex >= 0) {
-      proxy.scrollTo(activeIndex, "center")
+      withAnimation(Animation.easeOut(0.35), () => {
+        proxy.scrollTo(activeIndex, "center")
+      })
     }
   }, [activeIndex])
 
   return (
-    <ScrollView axes="vertical" frame={{ maxWidth: "infinity", height }}>
+    <ScrollView axes="vertical" scrollContentBackground="hidden" frame={{ maxWidth: "infinity", height }}>
       <VStack alignment="center" spacing={10} padding={{ top: 8, bottom: 8 }} frame={{ maxWidth: "infinity" }}>
         {lines.map((line, i) => (
           <LyricRow key={i} index={i} text={line.text} active={i === activeIndex} />
@@ -209,7 +218,7 @@ function LyricRow({ index, text, active }: { index: number; text: string; active
 function PlainLyric({ text, height }: { text: string; height: number }) {
   const linesArr = useMemo(() => text.split(/\r?\n/), [text])
   return (
-    <ScrollView axes="vertical" frame={{ maxWidth: "infinity", height }}>
+    <ScrollView axes="vertical" scrollContentBackground="hidden" frame={{ maxWidth: "infinity", height }}>
       <VStack alignment="center" spacing={8} padding={{ top: 8, bottom: 8 }} frame={{ maxWidth: "infinity" }}>
         {linesArr.map((l, i) => (
           <Text

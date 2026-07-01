@@ -146,7 +146,7 @@ export function PlaylistsView() {
         playlists.value.map(playlist => (
           <NavigationLink key={playlist.id} destination={<PlaylistDetail playlistId={playlist.id} onDeleted={loadPlaylists} />}>
             <HStack spacing={12}>
-              <CoverCollage musics={collageMusics[playlist.id] ?? []} size={50} cornerRadius={9} shadow={false} />
+              <CoverCollage musics={collageMusics[playlist.id] ?? []} size={50} cornerRadius={9} showShadow={false} />
               <VStack alignment="leading" spacing={2}>
                 <Text font="headline">{playlist.name}</Text>
                 <Text font="subheadline" foregroundStyle="secondaryLabel">{playlist.music_count} 首歌曲</Text>
@@ -497,7 +497,7 @@ function PlaylistHeader({ playlist, musics, coverExists }: { playlist: Playlist,
       <VStack spacing={0} frame={{ maxWidth: "infinity" }}>
         {hasCover ? (
           <ZStack frame={{ maxWidth: "infinity", height: 300 }} clipped={true}>
-            <CoverCollage musics={musics.slice(0, 4)} size={Device.screen.width} cornerRadius={0} shadow={false} blur={28} />
+            <CoverCollage musics={musics.slice(0, 4)} size={Device.screen.width} cornerRadius={0} showShadow={false} blur={28} />
             <Rectangle frame={{ maxWidth: "infinity", height: 300 }} fill={BANNER_SCRIM} />
             {foreground}
           </ZStack>

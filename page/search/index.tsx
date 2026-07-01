@@ -5,35 +5,26 @@ import {
   List,
   Section,
   Text,
-  VStack,
   HStack,
   Image,
   Button,
   Spacer,
-  Menu,
-  Toolbar,
-  ToolbarItem,
   Picker,
-  Group,
-  Label,
 } from "scripting"
-import { MusicData, music } from "../../class/music"
 import { Music, database } from "../../class/database"
 import { player } from "../../class/player"
 import { fileManager } from "../../class/file_manager"
-import { SearchResultCard } from "./components/search_result_card"
 import { SongRow } from "../components/song_row"
-import { ArtistResultsSection, AlbumResultsSection } from "./components/entity_results"
-import { itunesBrowse, ItunesArtist, ItunesAlbum } from "../../class/sources/itunes_browse"
+import { ArtistResultsSection, AlbumResultsSection, ItunesSongResultsSection } from "./components/entity_results"
+import { itunesBrowse, ItunesArtist, ItunesAlbum, ItunesTrack } from "../../class/sources/itunes_browse"
 import { SearchPlaceholder } from "./components/search_placeholder"
 import { addToHistory, getHistory, clearHistory } from "./components/search_history"
 import { usePlayerState } from "../../class/player_state"
 import { PlaylistPickerContent } from "../components/playlist_picker"
 import { LRUCache } from "../../class/lru_cache"
 
-type CacheEntry = { data: MusicData[], timestamp: number }
-type SortType = "relevance" | "title" | "artist"
-type SearchMode = "online" | "local" | "artist" | "album"
+type CacheEntry = { data: ItunesTrack[], timestamp: number }
+type SearchMode = "online" | "artist" | "album" | "local"
 
 const searchCache = new LRUCache<string, CacheEntry>(50)
 const CACHE_DURATION = 5 * 60 * 1000
@@ -42,16 +33,15 @@ export function SearchView() {
   const [inputValue, setInputValue] = useState("")
   const [query, setQuery] = useState("")
   const [mode, setMode] = useState<SearchMode>("online")
-  const [results, setResults] = useState<MusicData[] | null>(null)
+  const [results, setResults] = useState<ItunesTrack[] | null>(null)
   const [localResults, setLocalResults] = useState<Music[] | null>(null)
   const [artistResults, setArtistResults] = useState<ItunesArtist[] | null>(null)
   const [albumResults, setAlbumResults] = useState<ItunesAlbum[] | null>(null)
   const [localCoverExists, setLocalCoverExists] = useState<Record<string, boolean>>({})
   const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [sortType, setSortType] = useState<SortType>("relevance")
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false)
-  const [selectedMusic, setSelectedMusic] = useState<MusicData | Music | null>(null)
+  const [selectedMusic, setSelectedMusic] = useState<Music | null>(null)
   const [historyVersion, setHistoryVersion] = useState(0)
   const playerState = usePlayerState()
 
@@ -69,18 +59,7 @@ export function SearchView() {
     if (query) doSearch(query)
   }, [mode])
 
-  function sortResults(data: MusicData[], type: SortType): MusicData[] {
-      const sorted = [...data]
-      switch (type) {
-        case "title": sorted.sort((a, b) => a.title.localeCompare(b.title)); break
-        case "artist": sorted.sort((a, b) => (a.artist || "").localeCompare(b.artist || "")); break
-        default: break
-      }
-      // Prioritize items with cover art
-      return sorted.sort((a, b) => (b.cover ? 1 : 0) - (a.cover ? 1 : 0))
-    }
-
-  async function doSearch(q: string) {
+    async function doSearch(q: string) {
     const trimmed = q.trim()
     if (!trimmed) return
     setQuery(trimmed)
@@ -154,7 +133,7 @@ export function SearchView() {
     const cacheKey = q
     const cached = searchCache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      setResults(sortResults(cached.data, sortType))
+      setResults(cached.data)
       setError(null)
       return
     }
@@ -162,8 +141,8 @@ export function SearchView() {
     setResults(null)
     setError(null)
     try {
-      const { items } = await music.search(q)
-      setResults(sortResults(items, sortType))
+      const items = await itunesBrowse.searchSongs(q)
+      setResults(items)
       searchCache.set(cacheKey, { data: items, timestamp: Date.now() })
     } catch {
       setError("搜索失败，请检查网络连接后重试")
@@ -172,12 +151,6 @@ export function SearchView() {
       setIsSearching(false)
     }
   }
-
-  useEffect(() => {
-    if (results && results.length > 0) {
-      setResults(prev => sortResults(prev!, sortType))
-    }
-  }, [sortType])
 
   async function addToPlaylist(playlistId: string) {
     if (!selectedMusic) return
@@ -190,9 +163,10 @@ export function SearchView() {
           artist: selectedMusic.artist || "未知艺术家",
           album: selectedMusic.album || "未知专辑",
           duration: selectedMusic.duration || 0,
-          cover_url: (selectedMusic as any).cover ?? (selectedMusic as any).cover_url ?? "",
-          audio_url: "audio_url" in selectedMusic ? selectedMusic.audio_url || "" : "",
+          cover_url: selectedMusic.cover_url ?? "",
+          audio_url: selectedMusic.audio_url || "",
           provider: selectedMusic.provider,
+          source_id: selectedMusic.source_id,
           is_downloaded: false,
           added_at: Date.now(),
         })
@@ -245,10 +219,10 @@ export function SearchView() {
         value: inputValue,
         onChanged: setInputValue,
         placement: "navigationBarDrawer",
-        prompt: mode === "online" ? "搜索音乐、艺人、专辑"
-          : mode === "local" ? "搜索本地歌曲"
+        prompt: mode === "online" ? "搜索歌曲（在线）"
           : mode === "artist" ? "搜索艺人（在线）"
-          : "搜索专辑（在线）"
+          : mode === "album" ? "搜索专辑（在线）"
+          : "搜索本地歌曲"
       }}
       searchSuggestions={
         <>
@@ -261,20 +235,7 @@ export function SearchView() {
         triggers: "search",
         action: () => doSearch(inputValue)
       }}
-      submitLabel="search"
-      toolbar={
-              <Toolbar>
-                {hasOnlineResults && !isSearching && mode === "online" && (
-                  <ToolbarItem placement="topBarTrailing">
-                    <Menu label={<Image systemName="arrow.up.arrow.down" />}>
-                      <Button title="按相关度" systemImage={sortType === "relevance" ? "checkmark" : undefined} action={() => setSortType("relevance")} />
-                      <Button title="按歌曲名称" systemImage={sortType === "title" ? "checkmark" : undefined} action={() => setSortType("title")} />
-                      <Button title="按艺人名称" systemImage={sortType === "artist" ? "checkmark" : undefined} action={() => setSortType("artist")} />
-                    </Menu>
-                  </ToolbarItem>
-                )}
-              </Toolbar>
-            }>
+      submitLabel="search">
       <Section>
         <Picker
                   label={<Text>搜索模式</Text>}
@@ -282,10 +243,10 @@ export function SearchView() {
                   onChanged={(v: string) => setMode(v as SearchMode)}
                   pickerStyle="segmented"
                 >
-          <Text tag="online">在线</Text>
-          <Text tag="local">本地</Text>
+          <Text tag="online">歌曲</Text>
           <Text tag="artist">艺人</Text>
           <Text tag="album">专辑</Text>
+          <Text tag="local">本地</Text>
         </Picker>
       </Section>
 
@@ -296,16 +257,12 @@ export function SearchView() {
       ) : showEmpty ? (
         <SearchPlaceholder kind="empty" />
       ) : mode === "online" && hasOnlineResults ? (
-              <Section header={<Text>{`"${query}" 的搜索结果`}</Text>}>
-                {results!.map(item => (
-                  <SearchResultCard
-                    key={item.id}
-                    info={item}
-                    isPlaying={playerState.currentMusic?.id === item.id}
-                    onShowPlaylistPicker={() => { setSelectedMusic(item); setShowPlaylistPicker(true) }}
-      />
-                ))}
-              </Section>
+        <ItunesSongResultsSection
+          tracks={results!}
+          query={query}
+          currentMusic={playerState.currentMusic}
+          onAddToPlaylist={(m) => { setSelectedMusic(m); setShowPlaylistPicker(true) }}
+        />
       ) : mode === "local" && hasLocalResults ? (
         <Section header={<Text>{`"${query}" 的本地结果`}</Text>}>
           {localResults!.map(m => (

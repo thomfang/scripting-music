@@ -1,4 +1,4 @@
-import { fetch } from "scripting"
+import { fetch, AbortController } from "scripting"
 
 /**
  * 专辑信息源（TheAudioDB）。

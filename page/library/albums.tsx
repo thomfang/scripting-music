@@ -311,10 +311,10 @@ function AlbumHeader({ album, artist, musics }: { album: string, artist: string,
           foreground
         )}
 
-        {description && (
+        {Boolean(description) && (
           <Button action={() => setExpanded(e => !e)} buttonStyle="plain">
             <VStack alignment="leading" spacing={6} padding={{ horizontal: 16, top: 14, bottom: 16 }} frame={{ maxWidth: "infinity" }} contentShape="rect">
-              <Text font="body" foregroundStyle="secondaryLabel" lineLimit={expanded ? undefined : 3}>{description}</Text>
+              <Text font="body" foregroundStyle="secondaryLabel" lineLimit={expanded ? 999 : 3}>{description ?? ""}</Text>
               <HStack spacing={3}>
                 <Text font="caption" fontWeight="semibold" foregroundStyle="systemPink">{expanded ? "收起" : "展开"}</Text>
                 <Image systemName={expanded ? "chevron.up" : "chevron.down"} font="caption2" foregroundStyle="systemPink" />

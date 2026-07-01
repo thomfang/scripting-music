@@ -47,7 +47,7 @@ export function Title({
   )
 
   return (
-    <VStack alignment={"leading"} spacing={compact ? 2 : 4} frame={{ maxWidth: "infinity", alignment: "leading" }} padding={padding}>
+    <VStack alignment={"leading"} spacing={compact ? 2 : 4} frame={{ maxWidth: "infinity", alignment: "leading" }} {...(padding ? { padding } : {})}>
       <Text
         font={compact ? "headline" : "title2"}
         fontWeight={"bold"}

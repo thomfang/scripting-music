@@ -10,6 +10,8 @@ async function main() {
       // do nothing
     })
 
+    Script.enableMinimize()
+
     await player.init()
     await downloadManager.init()
     await downloadCenter.init()

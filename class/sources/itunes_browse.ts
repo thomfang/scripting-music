@@ -1,4 +1,4 @@
-import { fetch } from "scripting"
+import { fetch, AbortController } from "scripting"
 
 /**
  * iTunes 在线浏览数据源（艺人 / 专辑 / 专辑曲目）。
@@ -109,6 +109,20 @@ class ItunesBrowseSource {
     } finally {
       clearTimeout(timer)
     }
+  }
+
+  /** 歌曲搜索（entity=song，按 iTunes 相关度排序）。搜索页在线歌曲模式用。 */
+  async searchSongs(q: string, limit = 50): Promise<ItunesTrack[]> {
+    const key = `ss|${q}|${limit}`
+    if (this.cache.has(key)) return this.cache.get(key)
+    const url = `${SEARCH}?term=${encodeURIComponent(q)}&media=music&entity=song&limit=${limit}&country=${COUNTRY}`
+    const json = await this.getJson(url)
+    const list: ItunesTrack[] = (json?.results ?? [])
+      .filter((r: any) => r.wrapperType === "track" && r.kind === "song" && r.trackId)
+      .map(toTrack)
+      .filter((t: ItunesTrack) => !!t.title)
+    this.cache.set(key, list)
+    return list
   }
 
   async searchArtists(q: string, limit = 25): Promise<ItunesArtist[]> {
