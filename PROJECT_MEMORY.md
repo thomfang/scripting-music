@@ -35,6 +35,7 @@
   - `8d276e03` 资料库首页导航竞态修复：卡片墙改声明式 NavigationLink；快捷宫格(LazyVGrid)用 Button+每卡独立 navigationDestination
   - `3da93621` 播放页点艺人/专辑跳详情页（嵌套 sheet+NavigationStack）+ 搜索页新增艺人/专辑模式；抽共享行组件 rows.tsx、搜索占位/结果区组件
   - `de891b4b` 搜索页艺人/专辑改走在线 iTunes（itunes_browse.ts + online_detail.tsx）+ 播放页详情 sheet 补 tint=systemPink
+  - `92e3f1d1` 在线专辑/艺人详情曲目走真实 mp3juice 源(resolve_real.ts；可播放/下载/加歌单+解析态)+统一播放页/mini封面(use_cover.ts；已下载优先本地文件)
   - `c89e33e2` 播放页对抗性修复：play_count 去重计数 + 切歌竞态 playToken + 歌词在线落地 + LRU + shuffle 历史栈
 
 ## 音源架构
@@ -144,10 +145,14 @@
   - `lookup?id=<artistId>&entity=album` → 首条 artist + 该艺人全部专辑
   - `lookup?id=<collectionId>&entity=song` → 首条 collection + 各 track（trackName/trackNumber/duration/previewUrl）
 - **数据层** `class/sources/itunes_browse.ts`：单例 `itunesBrowse`，4 方法 + 8s 超时 + 轻量缓存 + 降级空；封面 100→600。与 `itunes_meta.ts`（搜索结果富化）区分。
-- **在线详情页** `page/search/online_detail.tsx`：`OnlineAlbumDetail`（曲目列表 + 播放全部 + SearchResultCard）、`OnlineArtistDetail`（专辑墙）。曲目播放走 mp3juice 实时解析（`trackToMusic`→player、`trackToMusicData`→SearchResultCard；id 用 iTunes trackId，**不依赖 id 对应真实音频**，mp3juice 按「标题 艺人」搜）。
+- **在线详情页** `page/search/online_detail.tsx`：`OnlineAlbumDetail`、`OnlineArtistDetail`（专辑墙）。⚠️ **曲目播放/下载不能直接用 iTunes trackId 当 mp3juice 源**（已修，见下方 `92e3f1d1` 章节）：必须 `resolveRealMusic` 先搜真实源。
 - **艺人无官方图**：详情页头像/简介仍靠 TheAudioDB `artistInfo`，封面靠 iTunes，互补。
 - **搜索页**：艺人/专辑模式从查本地改为 `itunesBrowse.searchArtists/searchAlbums`；`entity_results.tsx` 重写为在线版（艺人行 `ArtistRow`+可选 subtitle 显 genre，专辑行 iTunes 封面）。本地/在线歌曲模式不变。
-- **sheet tint 修复**：播放页详情 sheet（`entity_sheet.tsx`）的 `NavigationStack` 加 `tint="systemPink"`——嵌套 sheet 不继承 TabView tint。确认播放页用 sheet modifier（非 Navigation.present）。
+- **在线详情页曲目播放/下载/加歌单**（`92e3f1d1`，spec `2026-07-01_08-11`）：
+  - **关键纠错**：mp3juice `resolveAudioUrl` 只用 `source_id ?? id` 拼 `youtube.com/watch?v=<id>`，**从不按标题搜**。iTunes trackId ≠ YouTube videoId，故 iTunes 曲目**不能**直接当 mp3juice 源播放/下载（此前 online_detail 的 `trackToMusic`+SearchResultCard 就是这个 bug，全部失败）。
+  - 正确姿势：`class/sources/resolve_real.ts` 的 `resolveRealMusic({title,artist,...})` 先 `music.search("标题 艺人")` 取首条真实 mp3juice 源（真实 id/source_id），再交 player/downloader。发现页 `resolveReal` 与在线详情页共用。
+  - `online_detail.tsx` 曲目区改自建 `OnlineTrackRow`：点击/下载/加歌单前先 `resolveRealMusic`，解析中 spinner、失败红叹号、已下绿勾。「播放全部/随机」=解析首曲即播 + 后台逐首 `addToQueue`。`isPlaying` 用**标题归一化**匹配（真实源 id≠trackId）。
+- **播放页/mini 封面统一**（同 commit）：`page/player/use_cover.ts` 的 `useResolvedCover(music)→{localImage,remoteUrl}`，**已下载优先本地封面文件**（`getCoverPath`，与实际音频同源；下载若走 `findReplacementSource` 换源，本地图会与 DB `cover_url` 不同），否则远程 `cover_url`。`Cover`/`CoverBackground`/`PlayerInfo` 三处统一用它，修复 mini 与 player 页显示两张不同封面。
 
 ## 艺人列表/详情页
 

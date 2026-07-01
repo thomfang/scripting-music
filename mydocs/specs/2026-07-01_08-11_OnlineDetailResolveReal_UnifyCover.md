@@ -69,4 +69,8 @@
 
 ## Change Log
 
-- （实现后回填）
+- `92e3f1d1` 实现：
+  - 新增 `class/sources/resolve_real.ts`：`resolveRealMusic(meta)`（“标题 艺人”搜 mp3juice 取首条真实源）；发现页 `resolveReal` 改为调用它（删重复，移除未用 `music` import）。
+  - `online_detail.tsx`：删除 `trackToMusic/trackToMusicData` 及对 `SearchResultCard` 的误用；新增 `OnlineTrackRow`（点击/下载/加歌单先 `resolveRealMusic` 解析真实源，解析中 spinner、失败红叹号、已下绿勾）；“播放全部/随机”改为解析首曲即播 + 后台逐首解析入队；新增加歌单 sheet（PlaylistPickerContent）。`isPlaying` 改用标题归一化匹配（真实源 id ≠ iTunes trackId）。
+  - 新增 `page/player/use_cover.ts`：`useResolvedCover(music)` 返回 `{localImage, remoteUrl}`，已下载优先本地文件。`Cover`/`CoverBackground`/`PlayerInfo` 三处统一用它，修复 mini 与 player 页封面不一致。
+- 验证：`preview_ui` 编译整依赖链通过（仅 usePlayerState 无 Provider 的运行时报错，预期）。真机待测。
