@@ -22,10 +22,16 @@ class MusicFileManager {
     return Path.join(this.rootPath, "lyrics")
   }
 
+  /** 断点续传的临时分片目录（<root>/downloads/<id>.part） */
+  private get downloadsDir(): string {
+    return Path.join(this.rootPath, "downloads")
+  }
+
   async init(): Promise<void> {
     await FileManager.createDirectory(this.audioDir, true)
     await FileManager.createDirectory(this.coverDir, true)
     await FileManager.createDirectory(this.lyricsDir, true)
+    await FileManager.createDirectory(this.downloadsDir, true)
   }
 
   async saveAudio(musicId: string, data: Uint8Array): Promise<string> {
@@ -128,6 +134,62 @@ class MusicFileManager {
     }
   }
 
+  // ===== 断点续传 partial 分片 =====
+
+  getPartPath(musicId: string): string {
+    return Path.join(this.downloadsDir, `${musicId}.part`)
+  }
+
+  async partExists(musicId: string): Promise<boolean> {
+    return await FileManager.exists(this.getPartPath(musicId))
+  }
+
+  /** 已下字节数（part 文件大小）；不存在返回 0。 */
+  async partSize(musicId: string): Promise<number> {
+    const path = this.getPartPath(musicId)
+    if (!(await FileManager.exists(path))) return 0
+    try {
+      const s = await FileManager.stat(path)
+      return s.size || 0
+    } catch {
+      return 0
+    }
+  }
+
+  /** 追加分片数据到 part 文件（自动建文件/目录）。 */
+  async appendPart(musicId: string, bytes: Uint8Array): Promise<void> {
+    if (!musicId || musicId.includes("/") || musicId.includes("..")) {
+      throw new Error("Invalid music ID")
+    }
+    const path = this.getPartPath(musicId)
+    const DataNS = (globalThis as any).Data
+    const FM = FileManager as any
+    if (DataNS?.fromUint8Array && typeof FM.appendData === "function") {
+      const data = DataNS.fromUint8Array(bytes)
+      if (data) { await FM.appendData(path, data); return }
+    }
+    if (typeof FM.appendData === "function" && DataNS?.fromUint8Array) {
+      await FM.appendData(path, DataNS.fromUint8Array(bytes))
+      return
+    }
+    // 极端回退：读旧 + 拼接 + 覆盖写（appendData 不可用时）
+    let prev = new Uint8Array(0)
+    if (await FileManager.exists(path)) prev = await FileManager.readAsBytes(path)
+    const merged = new Uint8Array(prev.length + bytes.length)
+    merged.set(prev, 0)
+    merged.set(bytes, prev.length)
+    await writeBytesCompat(path, merged)
+  }
+
+  async readPart(musicId: string): Promise<Uint8Array> {
+    return await FileManager.readAsBytes(this.getPartPath(musicId))
+  }
+
+  async deletePart(musicId: string): Promise<void> {
+    const path = this.getPartPath(musicId)
+    if (await FileManager.exists(path)) await FileManager.remove(path)
+  }
+
   /** 统计目录内文件总大小（并行 stat） */
   private async sumDirSize(dir: string): Promise<number> {
     if (!(await FileManager.exists(dir))) return 0
@@ -139,12 +201,13 @@ class MusicFileManager {
   }
 
   async getStorageSize(): Promise<number> {
-    const [audioSize, coverSize, lyricsSize] = await Promise.all([
+    const [audioSize, coverSize, lyricsSize, partSize] = await Promise.all([
       this.sumDirSize(this.audioDir),
       this.sumDirSize(this.coverDir),
-      this.sumDirSize(this.lyricsDir)
+      this.sumDirSize(this.lyricsDir),
+      this.sumDirSize(this.downloadsDir)
     ])
-    return audioSize + coverSize + lyricsSize
+    return audioSize + coverSize + lyricsSize + partSize
   }
 }
 

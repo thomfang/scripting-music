@@ -4,7 +4,7 @@ import { player } from "../../class/player"
 import { PlayMode } from "../../class/player"
 import { QueueSheet } from "./queue"
 import { Navigation } from "scripting"
-import { downloadManager } from "../../class/download_manager"
+import { downloadCenter } from "../../class/download_center"
 import { fileManager } from "../../class/file_manager"
 import { music } from "../../class/music"
 import { ITUNES_PREVIEW_PROVIDER } from "../../class/sources/charts"
@@ -59,7 +59,7 @@ export function Control() {
           // 找不到真实源，不下载 30s 试听，直接放弃
           return
         }
-        await downloadManager.downloadMusic({
+        await downloadCenter.enqueue({
           id: real.id,
           provider: real.provider,
           title: real.title || currentMusic.title,
@@ -73,7 +73,7 @@ export function Control() {
         setIsDownloaded(true)
         return
       }
-      await downloadManager.downloadMusic({
+      await downloadCenter.enqueue({
         id: currentMusic.id,
         provider: currentMusic.provider ?? "",
         title: currentMusic.title,

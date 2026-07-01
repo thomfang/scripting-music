@@ -30,9 +30,11 @@ type DownloadTask = {
   musicInfo: MusicInfo
   abortController: AbortController
   isPaused: boolean
+  /** 当前 part 文件对应的已解析直链 URL；与本次 audio_url 不符则不能用 Range 续传。 */
+  partUrl?: string
 }
 
-type ProgressCallback = (progress: number, status: "downloading" | "completed" | "failed" | "cancelled") => void
+type ProgressCallback = (progress: number, status: "downloading" | "completed" | "failed" | "cancelled" | "paused") => void
 
 class FetchDownloader {
   private tasks = new Map<string, DownloadTask>()
@@ -206,38 +208,64 @@ class FetchDownloader {
     if (!task) return
 
     const { taskId, musicInfo, abortController } = task
+    const url = musicInfo.audio_url!
 
     try {
-      await database.updateDownloadTask(taskId, "downloading", 0)
-      console.log(`[下载] ${musicInfo.title} - 开始请求`)
+      // 断点续传判定：part 存在 && 与当前 URL 同源才能续；否则从头重下。
+      let offset = 0
+      if (task.partUrl === url && await fileManager.partExists(musicId)) {
+        offset = await fileManager.partSize(musicId)
+      } else {
+        await fileManager.deletePart(musicId)
+        task.partUrl = url
+      }
 
-      const response = await fetch(musicInfo.audio_url!, {
-        signal: abortController.signal
+      await database.updateDownloadTask(taskId, "downloading", 0)
+      console.log(`[下载] ${musicInfo.title} - 开始请求（offset=${offset}）`)
+
+      const response = await fetch(url, {
+        signal: abortController.signal,
+        headers: offset > 0 ? { Range: `bytes=${offset}-` } : {},
       })
 
-      if (!response.ok) {
+      if (!response.ok && response.status !== 206) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
 
-      const contentLength = parseInt(response.headers.get("content-length") || "0")
-      console.log(`[下载] ${musicInfo.title} - 文件大小: ${contentLength} 字节`)
+      // Range 探测：
+      //  - 206：服务端支持续传，继续追写；total 从 Content-Range 解析。
+      //  - offset>0 但返回 200：服务端忽略了 Range，part 作废，从头重写。
+      let total = 0
+      if (response.status === 206) {
+        const cr = response.headers.get("content-range") || ""
+        const m = cr.match(/\/(\d+)\s*$/)
+        total = m ? parseInt(m[1]) : (parseInt(response.headers.get("content-length") || "0") + offset)
+      } else {
+        // 200：全量响应
+        if (offset > 0) {
+          console.log(`[下载] ${musicInfo.title} - 服务端不支持 Range，从头重下`)
+          await fileManager.deletePart(musicId)
+          offset = 0
+          task.partUrl = url
+        }
+        total = parseInt(response.headers.get("content-length") || "0")
+      }
+      console.log(`[下载] ${musicInfo.title} - 总大小: ${total} 字节（已有 ${offset}）`)
 
-      const chunks: Uint8Array[] = []
-      let downloadedBytes = 0
+      let downloadedBytes = offset
 
-      // 兼容新旧 Scripting fetch：
-      // - 新版 response.body 是标准 ReadableStream<Uint8Array>，chunk 即 Uint8Array（无 toUint8Array）；
-      //   老的 Data 流挪到了 response.dataStream（chunk 是 Data，带 toUint8Array）。
-      // - 老版 response.body 是 ReadableStream<Data>（chunk 带 toUint8Array），没有 dataStream。
-      // 优先取 dataStream（新旧都给 Data chunk），不存在再回退 body；chunk 统一归一化为 Uint8Array。
+      // 兼容新旧 Scripting fetch：优先 dataStream（新旧都给 Data chunk），否则 body；chunk 归一化 Uint8Array。
       const resp = response as any
       const stream = resp.dataStream ?? resp.body
       if (!stream) throw new Error("response 没有可读流（body/dataStream 均为空）")
       const reader = stream.getReader()
       while (true) {
         if (task.isPaused) {
-          console.log(`[下载暂停] ${musicInfo.title}`)
-          await database.updateDownloadTask(taskId, "paused", (downloadedBytes / contentLength) * 100)
+          console.log(`[下载暂停] ${musicInfo.title}（保留 part ${downloadedBytes}/${total}）`)
+          const p = total > 0 ? (downloadedBytes / total) * 100 : 0
+          await database.updateDownloadTask(taskId, "paused", p)
+          this.progressCallbacks.get(musicId)?.(p / 100, "paused")
+          try { await reader.cancel() } catch {}
           return
         }
 
@@ -245,34 +273,37 @@ class FetchDownloader {
         if (done) break
         if (!value) continue
 
-        // Data chunk -> toUint8Array()；新版标准流 chunk 本身就是 Uint8Array
         const bytes: Uint8Array = typeof (value as any).toUint8Array === "function"
           ? (value as any).toUint8Array()
           : (value as Uint8Array)
-        if (!bytes) continue
+        if (!bytes || bytes.length === 0) continue
 
-        chunks.push(bytes)
+        await fileManager.appendPart(musicId, bytes)
         downloadedBytes += bytes.length
 
-        const progress = contentLength > 0 ? (downloadedBytes / contentLength) * 100 : 0
+        const progress = total > 0 ? (downloadedBytes / total) * 100 : 0
         if (Math.floor(progress) % 10 === 0) {
-          console.log(`[下载进度] ${musicInfo.title}: ${Math.floor(progress)}% (${downloadedBytes}/${contentLength})`)
+          console.log(`[下载进度] ${musicInfo.title}: ${Math.floor(progress)}% (${downloadedBytes}/${total})`)
         }
         await database.updateDownloadTask(taskId, "downloading", progress)
         this.progressCallbacks.get(musicId)?.(progress / 100, "downloading")
       }
 
-      console.log(`[下载完成] ${musicInfo.title} - 总大小: ${downloadedBytes} 字节`)
-      await this.processDownloadedFile(musicId, chunks)
+      const finalBytes = await fileManager.readPart(musicId)
+      console.log(`[下载完成] ${musicInfo.title} - 总大小: ${finalBytes.length} 字节`)
+      await this.processDownloadedFile(musicId, [finalBytes])
+      await fileManager.deletePart(musicId)
     } catch (error: any) {
       console.error(error)
       if (error.name === "AbortError") {
         console.log(`[下载取消] ${musicInfo.title}`)
         await database.updateDownloadTask(taskId, "cancelled", 0)
+        await fileManager.deletePart(musicId)
         this.progressCallbacks.get(musicId)?.(0, "cancelled")
       } else {
         console.error(`[下载失败] ${musicInfo.title}: ${error}`)
         await database.updateDownloadTask(taskId, "failed", 0, String(error))
+        // 失败不删 part：保留以便重试续传（重试若换 URL 会自动重下）
         this.progressCallbacks.get(musicId)?.(0, "failed")
       }
       this.progressCallbacks.delete(musicId)
@@ -410,9 +441,30 @@ class FetchDownloader {
   async cancelDownload(musicId: string) {
     const task = this.tasks.get(musicId)
     if (task) {
-      task.abortController.abort()
-      console.log(`[取消下载] ${task.musicInfo.title}`)
+      if (task.isPaused) {
+        // 暂停中的 task 没有 in-flight fetch，abort 不会触发；手动收尾。
+        console.log(`[取消下载（暂停态）] ${task.musicInfo.title}`)
+        try { await database.updateDownloadTask(task.taskId, "cancelled", 0) } catch {}
+        await fileManager.deletePart(musicId)
+        this.progressCallbacks.get(musicId)?.(0, "cancelled")
+        this.progressCallbacks.delete(musicId)
+        this.tasks.delete(musicId)
+        await this.stopBackgroundKeeperIfNeeded()
+      } else {
+        task.abortController.abort()
+        console.log(`[取消下载] ${task.musicInfo.title}`)
+      }
+    } else {
+      // 无活体 task（如 hydrate/被杀后）：清 part + 标记 DB。
+      await fileManager.deletePart(musicId)
+      const t = await database.getDownloadTaskByMusicId(musicId)
+      if (t) { try { await database.updateDownloadTask(t.id, "cancelled", 0) } catch {} }
     }
+  }
+
+  /** 当前是否持有活体（含暂停）task。 */
+  hasTask(musicId: string): boolean {
+    return this.tasks.has(musicId)
   }
 
   private async startBackgroundKeeper() {

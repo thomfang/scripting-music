@@ -10,7 +10,7 @@ import { SongRow } from "../components/song_row"
 import { BatchDownloadProgressSection } from "../components/batch_download_progress"
 import { safeRun } from "../../class/safe_run"
 import { playlistShare } from "../../class/playlist_share"
-import { downloadManager } from "../../class/download_manager"
+import { downloadCenter } from "../../class/download_center"
 import { BatchDownloadProgress, confirmBatchDownload, getBatchDownloadCandidates, hasBatchDownloadCandidates, loadAudioExistsMap, runBatchDownload, toDownloadMusicInfo } from "../../class/batch_download_helper"
 
 type SortType = "added" | "title" | "artist"
@@ -140,7 +140,7 @@ export function FavoritesView() {
     if (downloadingIds.has(music.id)) return
     setDownloadingIds(prev => { const next = new Set(prev); next.add(music.id); return next })
     await safeRun(async () => {
-      await downloadManager.downloadMusic(toDownloadMusicInfo(music))
+      await downloadCenter.enqueue(toDownloadMusicInfo(music))
     }, { title: "下载失败", tag: "favorites.download" })
     setDownloadingIds(prev => { const next = new Set(prev); next.delete(music.id); return next })
     await loadMusics()

@@ -14,7 +14,7 @@ import { BatchDownloadProgressSection } from "../components/batch_download_progr
 import { playlistShare } from "../../class/playlist_share"
 import { safeRun } from "../../class/safe_run"
 import { BatchDownloadProgress, confirmBatchDownload, getBatchDownloadCandidates, hasBatchDownloadCandidates, loadAudioExistsMap, runBatchDownload, toDownloadMusicInfo } from "../../class/batch_download_helper"
-import { downloadManager } from "../../class/download_manager"
+import { downloadCenter } from "../../class/download_center"
 
 export function PlaylistsView() {
   const playlists = useObservable<Playlist[]>([])
@@ -286,7 +286,7 @@ function PlaylistDetail({ playlistId, onDeleted }: { playlistId: string, onDelet
     if (downloadingIds.has(music.id)) return
     setDownloadingIds(prev => { const next = new Set(prev); next.add(music.id); return next })
     await safeRun(async () => {
-      await downloadManager.downloadMusic(toDownloadMusicInfo(music))
+      await downloadCenter.enqueue(toDownloadMusicInfo(music))
     }, { title: "下载失败", tag: "playlist.download" })
     setDownloadingIds(prev => { const next = new Set(prev); next.delete(music.id); return next })
     await load()

@@ -21,7 +21,7 @@ import {
 import { charts, CHART_GENRES, SEED_ARTISTS, NEW_SONGS_GENRE_ID, NEW_SONG_GENRES, ChartTrack, ChartGenre, ITUNES_PREVIEW_PROVIDER, hashStr, mulberry32, shuffleWith } from "../../class/sources/charts"
 import { player } from "../../class/player"
 import { database, Music } from "../../class/database"
-import { downloadManager } from "../../class/download_manager"
+import { downloadCenter } from "../../class/download_center"
 import { usePlayerState } from "../../class/player_state"
 import { PlaylistPickerContent } from "../components/playlist_picker"
 import { resolveRealMusic } from "../../class/sources/resolve_real"
@@ -315,7 +315,7 @@ export function DiscoverView() {
           is_downloaded: false, added_at: Date.now(),
         })
       }
-      await downloadManager.downloadMusic({
+      await downloadCenter.enqueue({
         id: real.id, provider: real.provider!, title: real.title,
         artist: real.artist, album: real.album, duration: real.duration,
         cover: real.cover_url ?? "", source_id: real.source_id,

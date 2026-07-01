@@ -1,6 +1,6 @@
 import { Music } from "./database"
 import { fileManager } from "./file_manager"
-import { downloadManager } from "./download_manager"
+import { downloadCenter } from "./download_center"
 
 export type BatchDownloadProgress = {
   done: number
@@ -98,9 +98,28 @@ export async function runBatchDownload(
     onProgress?: (done: number, total: number, last: { info: DownloadMusicInfo, ok: boolean, skipped?: boolean, error?: string }) => void
   } = {}
 ): Promise<BatchDownloadResult> {
-  return await downloadManager.downloadMany(musics.map(toDownloadMusicInfo), {
-    concurrency: options.concurrency ?? 3,
-    onItemStart: options.onItemStart,
-    onProgress: options.onProgress,
-  })
+  // 走全局下载中心（并发/队列由 center 统一调度），每首入队并 await terminal。
+  const infos = musics.map(toDownloadMusicInfo)
+  const total = infos.length
+  let done = 0, ok = 0, failed = 0
+  const skipped = 0
+  const errors: Array<{ id: string; title: string; error: string }> = []
+
+  await Promise.all(infos.map(async info => {
+    options.onItemStart?.(info)
+    try {
+      await downloadCenter.enqueue(info)
+      ok++
+      done++
+      options.onProgress?.(done, total, { info, ok: true })
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e)
+      failed++
+      done++
+      errors.push({ id: info.id, title: info.title, error })
+      options.onProgress?.(done, total, { info, ok: false, error })
+    }
+  }))
+
+  return { ok, failed, skipped, errors }
 }

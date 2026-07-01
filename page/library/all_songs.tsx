@@ -8,7 +8,7 @@ import { fileManager } from "../../class/file_manager"
 import { PlaylistPickerContent } from "../components/playlist_picker"
 import { SongRow } from "../components/song_row"
 import { BatchDownloadProgressSection } from "../components/batch_download_progress"
-import { downloadManager } from "../../class/download_manager"
+import { downloadCenter } from "../../class/download_center"
 import { BatchDownloadProgress, confirmBatchDownload, getBatchDownloadCandidates, hasBatchDownloadCandidates, loadAudioExistsMap, runBatchDownload, toDownloadMusicInfo } from "../../class/batch_download_helper"
 import { safeRun } from "../../class/safe_run"
 
@@ -75,7 +75,7 @@ export function AllSongsView() {
     if (downloadingIds.has(music.id)) return
     setDownloadingIds(prev => { const next = new Set(prev); next.add(music.id); return next })
     await safeRun(async () => {
-      await downloadManager.downloadMusic(toDownloadMusicInfo(music))
+      await downloadCenter.enqueue(toDownloadMusicInfo(music))
     }, { title: "下载失败", tag: "all_songs.downloadOne" })
     setDownloadingIds(prev => { const next = new Set(prev); next.delete(music.id); return next })
     await loadMusics()

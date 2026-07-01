@@ -4,7 +4,7 @@ import {
 } from "scripting"
 import { Music, database } from "../../class/database"
 import { player } from "../../class/player"
-import { downloadManager } from "../../class/download_manager"
+import { downloadCenter } from "../../class/download_center"
 import { usePlayerState } from "../../class/player_state"
 import { itunesBrowse, ItunesAlbum, ItunesTrack } from "../../class/sources/itunes_browse"
 import { resolveRealMusic } from "../../class/sources/resolve_real"
@@ -279,7 +279,7 @@ function OnlineTrackRow({ track, fallbackCover, isPlaying, onAddToPlaylist }: {
         is_downloaded: false, added_at: Date.now(),
       })
     }
-    await downloadManager.downloadMusic({
+    await downloadCenter.enqueue({
       id: real.id, provider: real.provider!, title: real.title,
       artist: real.artist, album: real.album, duration: real.duration,
       cover: real.cover_url ?? "", source_id: real.source_id,

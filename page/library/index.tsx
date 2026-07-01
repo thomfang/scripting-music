@@ -1,7 +1,7 @@
 import {
   Button, ContentUnavailableView, HStack, Image, Label, List, Menu,
   NavigationLink, ProgressView, ScrollView, Section, Spacer, Toolbar,
-  ToolbarItem, useEffect, useState,
+  ToolbarItem, useEffect, useState, Text,
 } from "scripting"
 import { database, Music, Playlist } from "../../class/database"
 import { player } from "../../class/player"
@@ -14,6 +14,8 @@ import { ArtistsView, ArtistDetail } from "./artists"
 import { AlbumsView, AlbumDetail } from "./albums"
 import { PlaylistsView, PlaylistDetailPage } from "./playlists"
 import { RecentlyPlayedView, TopPlayedView } from "./smart_playlists"
+import { DownloadCenterView } from "./download_center"
+import { useDownloadCenter } from "../../class/use_download_center"
 import {
   LibrarySectionHeader, QuickEntryGrid, QuickEntry,
   RecentlyAddedCard, FavoriteSongRow,
@@ -53,6 +55,7 @@ export function LibraryView() {
   const [data, setData] = useState<LibraryData | null>(null)
   const [loading, setLoading] = useState(true)
   const playerState = usePlayerState()
+  const { activeCount } = useDownloadCenter()
 
   useEffect(() => { load() }, [])
 
@@ -143,10 +146,20 @@ export function LibraryView() {
   const toolbarEl = (
     <Toolbar>
       <ToolbarItem placement="topBarTrailing">
-        <Menu label={<Image systemName="play.circle" />}>
-          <Button title="播放全部" systemImage="play.fill" action={() => playAll(false)} />
-          <Button title="随机播放" systemImage="shuffle" action={() => playAll(true)} />
-        </Menu>
+        <HStack spacing={12}>
+          {activeCount > 0 && (
+            <NavigationLink destination={<DownloadCenterView />}>
+              <HStack spacing={3}>
+                <Image systemName="arrow.down.circle" />
+                <Text font="footnote" fontWeight="semibold" foregroundStyle="systemPink">{String(activeCount)}</Text>
+              </HStack>
+            </NavigationLink>
+          )}
+          <Menu label={<Image systemName="play.circle" />}>
+            <Button title="播放全部" systemImage="play.fill" action={() => playAll(false)} />
+            <Button title="随机播放" systemImage="shuffle" action={() => playAll(true)} />
+          </Menu>
+        </HStack>
       </ToolbarItem>
     </Toolbar>
   )

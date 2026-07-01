@@ -2,6 +2,7 @@ import { HStack, VStack, Text, Image, Spacer, Button, Group, Label, ZStack, Circ
 import { MusicData, music } from "../../../class/music"
 import { player } from "../../../class/player"
 import { downloadManager } from "../../../class/download_manager"
+import { downloadCenter } from "../../../class/download_center"
 import { Music, database } from "../../../class/database"
 import { fileManager } from "../../../class/file_manager"
 import { useState, useEffect } from "scripting"
@@ -78,7 +79,7 @@ export function SearchResultCard({ info, isPlaying, onShowPlaylistPicker }: Prop
     setTimeout(poll, 300)
 
     try {
-      await downloadManager.downloadMusic({
+      await downloadCenter.enqueue({
         id: info.id,
         provider: info.provider,
         title: info.title,
@@ -96,7 +97,7 @@ export function SearchResultCard({ info, isPlaying, onShowPlaylistPicker }: Prop
   }
 
   async function handleCancelDownload() {
-    await downloadManager.cancelDownload(info.id)
+    await downloadCenter.cancel(info.id)
   }
 
   async function toggleFavorite() {
