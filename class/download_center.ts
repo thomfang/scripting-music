@@ -55,8 +55,28 @@ class DownloadCenter {
   private active = new Set<string>()
   private concurrency = 3
   private subscribers = new Set<() => void>()
-  private awaiters = new Map<string, Awaiter>()
+  private awaiters = new Map<string, Awaiter[]>()
   private unsubProgress = new Map<string, () => void>()
+
+  /** 登记一个等待者（多个调用方可共享同一 terminal）。 */
+  private addAwaiter(id: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const list = this.awaiters.get(id) ?? []
+      list.push({ resolve, reject })
+      this.awaiters.set(id, list)
+    })
+  }
+
+  /** 结算该 id 的所有等待者。 */
+  private settleAwaiters(id: string, ok: boolean, error?: string) {
+    const list = this.awaiters.get(id)
+    if (!list) return
+    this.awaiters.delete(id)
+    for (const aw of list) {
+      if (ok) aw.resolve()
+      else aw.reject(new Error(error ?? "下载失败"))
+    }
+  }
 
   // ===== 订阅 =====
 
@@ -119,6 +139,19 @@ class DownloadCenter {
       }
       if (this.items.size > 0) this.notify()
       console.log(`[下载中心] 对账完成，恢复 ${this.items.size} 个中断任务`)
+
+      // 清理孤儿 part：磁盘上有 .part 但无对应恢复 item（上次被杀后用户不再续）。
+      try {
+        const partIds = await fileManager.listPartIds()
+        for (const pid of partIds) {
+          if (!this.items.has(pid)) {
+            await fileManager.deletePart(pid).catch(() => {})
+            console.log(`[下载中心] 清理孤儿 part: ${pid}`)
+          }
+        }
+      } catch (e) {
+        console.error("[下载中心] 清理孤儿 part 失败:", e)
+      }
     } catch (e) {
       console.error("[下载中心] 对账失败:", e)
     }
@@ -136,12 +169,8 @@ class DownloadCenter {
     if (existing) {
       if (existing.status === "completed") return Promise.resolve()
       if (existing.status === "downloading" || existing.status === "queued" || existing.status === "paused") {
-        // 复用已有 awaiter（如果有）；否则给个新 awaiter。旧 awaiter 先 resolve 避免泄漏。
-        const prev = this.awaiters.get(info.id)
-        if (prev) prev.resolve()
-        return new Promise<void>((resolve, reject) => {
-          this.awaiters.set(info.id, { resolve, reject })
-        })
+        // 多个调用方共享同一 terminal：追加 awaiter，不动旧的。
+        return this.addAwaiter(info.id)
       }
       // failed/cancelled → 重新入队
     }
@@ -157,9 +186,7 @@ class DownloadCenter {
     this.queue.push(info.id)
     this.notify()
 
-    const p = new Promise<void>((resolve, reject) => {
-      this.awaiters.set(info.id, { resolve, reject })
-    })
+    const p = this.addAwaiter(info.id)
     this.pump()
     return p
   }
@@ -207,7 +234,13 @@ class DownloadCenter {
     const unsub = fetchDownloader.onProgress(id, (progress, status, received, total) => this.onEngineProgress(id, progress, status, received, total))
     this.unsubProgress.set(id, unsub)
 
-    fetchDownloader.downloadMusic(item.info as any).catch((e) => {
+    // 引擎里已有活体 task（如被限流延后的暂停 task）：downloadMusic 会因 tasks.has 静默早退
+    // 导致 item 卡死；改走 resumeDownload。
+    const engineCall = fetchDownloader.hasTask(id)
+      ? fetchDownloader.resumeDownload(id)
+      : fetchDownloader.downloadMusic(item.info as any)
+
+    engineCall.catch((e) => {
       // terminal 一般由 onProgress 驱动；这里兜底 failed（若 cb 未触发）。
       const it = this.items.get(id)
       if (it && (it.status === "downloading" || it.status === "queued")) {
@@ -232,12 +265,7 @@ class DownloadCenter {
     this.active.delete(id)
     const unsub = this.unsubProgress.get(id)
     if (unsub) { unsub(); this.unsubProgress.delete(id) }
-    const aw = this.awaiters.get(id)
-    if (aw) {
-      this.awaiters.delete(id)
-      if (ok) aw.resolve()
-      else aw.reject(new Error(error ?? "下载失败"))
-    }
+    this.settleAwaiters(id, ok, error)
     this.notify()
     this.pump()
     // 完成项 5s 后自动移除（避免新下载时还看到旧的已完成）。
@@ -274,6 +302,13 @@ class DownloadCenter {
   async resume(id: string) {
     const it = this.items.get(id)
     if (!it || it.status !== "paused") return
+    // 并发已满：不管引擎里是否有活体 task，都先回队列等待（由 pump 限流）。
+    if (this.active.size >= this.concurrency) {
+      it.status = "queued"
+      if (!this.queue.includes(id)) this.queue.push(id)
+      this.notify()
+      return
+    }
     if (fetchDownloader.hasTask(id)) {
       // 引擎里 task 还活着（同会话暂停）→ 走 resumeDownload（part 命中则 Range 续传）。
       it.status = "downloading"
@@ -330,8 +365,7 @@ class DownloadCenter {
     this.active.delete(id)
     const unsub = this.unsubProgress.get(id)
     if (unsub) { unsub(); this.unsubProgress.delete(id) }
-    const aw = this.awaiters.get(id)
-    if (aw) { this.awaiters.delete(id); aw.resolve() }
+    this.settleAwaiters(id, true)
     this.items.delete(id)
     this.order = this.order.filter(x => x !== id)
     this.notify()

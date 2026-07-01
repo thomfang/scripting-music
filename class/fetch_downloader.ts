@@ -265,7 +265,7 @@ class FetchDownloader {
         if (task.isCancelled) {
           console.log(`[下载取消（标志）] ${musicInfo.title}`)
           try { await reader.cancel() } catch {}
-          await database.updateDownloadTask(taskId, "cancelled", 0)
+          await database.deleteDownloadTask(taskId)
           await fileManager.deletePart(musicId)
           this.progressCallbacks.get(musicId)?.(0, "cancelled")
           this.progressCallbacks.delete(musicId)
@@ -306,7 +306,7 @@ class FetchDownloader {
       // 流末可能刚好碰上取消：入库前再查一次，避免已取消却仍写入。
       if (task.isCancelled) {
         console.log(`[下载取消（流末）] ${musicInfo.title}`)
-        await database.updateDownloadTask(taskId, "cancelled", 0)
+        await database.deleteDownloadTask(taskId)
         await fileManager.deletePart(musicId)
         this.progressCallbacks.get(musicId)?.(0, "cancelled")
         this.progressCallbacks.delete(musicId)
@@ -321,7 +321,7 @@ class FetchDownloader {
       console.error(error)
       if (error.name === "AbortError") {
         console.log(`[下载取消] ${musicInfo.title}`)
-        await database.updateDownloadTask(taskId, "cancelled", 0)
+        await database.deleteDownloadTask(taskId)
         await fileManager.deletePart(musicId)
         this.progressCallbacks.get(musicId)?.(0, "cancelled")
       } else {
@@ -430,7 +430,7 @@ class FetchDownloader {
         console.log(`[歌词] 本地化失败（忽略）: ${e}`)
       }
 
-      await database.updateDownloadTask(taskId, "completed", 100)
+      await database.deleteDownloadTask(taskId)
       console.log(`[下载成功] ${musicInfo.title}`)
       this.progressCallbacks.get(musicId)?.(1, "completed")
       this.progressCallbacks.delete(musicId)
@@ -468,7 +468,7 @@ class FetchDownloader {
       if (task.isPaused) {
         // 暂停中的 task 没有 in-flight fetch，abort 不会触发；手动收尾。
         console.log(`[取消下载（暂停态）] ${task.musicInfo.title}`)
-        try { await database.updateDownloadTask(task.taskId, "cancelled", 0) } catch {}
+        try { await database.deleteDownloadTask(task.taskId) } catch {}
         await fileManager.deletePart(musicId)
         this.progressCallbacks.get(musicId)?.(0, "cancelled")
         this.progressCallbacks.delete(musicId)
@@ -480,10 +480,10 @@ class FetchDownloader {
         console.log(`[取消下载] ${task.musicInfo.title}`)
       }
     } else {
-      // 无活体 task（如 hydrate/被杀后）：清 part + 标记 DB。
+      // 无活体 task（如 hydrate/被杀后）：清 part + 删 DB 行。
       await fileManager.deletePart(musicId)
       const t = await database.getDownloadTaskByMusicId(musicId)
-      if (t) { try { await database.updateDownloadTask(t.id, "cancelled", 0) } catch {} }
+      if (t) { try { await database.deleteDownloadTask(t.id) } catch {} }
     }
   }
 

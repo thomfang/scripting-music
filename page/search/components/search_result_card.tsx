@@ -57,24 +57,14 @@ export function SearchResultCard({ info, isPlaying, onShowPlaylistPicker }: Prop
     setDownloadProgress(0)
     setDownloadError(false)
 
-    // Poll DB for progress every 300ms until terminal state
+    // 进度轮询 DB（非终态行）；终态（完成/失败/取消）由 enqueue 的 promise 判定，
+    // 不再靠 DB 行（终态时 download_task 行已被删）。
     let stopPolling = false
     const poll = async () => {
       if (stopPolling) return
       const task = await database.getDownloadTaskByMusicId(info.id)
-      // Wait for a fresh "pending" or "downloading" task
-      if (!task || task.status === "failed" || task.status === "cancelled") {
-        setTimeout(poll, 300)
-        return
-      }
-      if (task.progress > 0) setDownloadProgress(task.progress / 100)
-      if (task.status === "completed") {
-        stopPolling = true
-        setIsDownloaded(true)
-        setIsDownloading(false)
-      } else {
-        setTimeout(poll, 300)
-      }
+      if (task && task.progress > 0) setDownloadProgress(task.progress / 100)
+      setTimeout(poll, 300)
     }
     setTimeout(poll, 300)
 
@@ -88,6 +78,11 @@ export function SearchResultCard({ info, isPlaying, onShowPlaylistPicker }: Prop
         duration: info.duration || 0,
         cover: info.cover || ""
       })
+      stopPolling = true
+      // enqueue resolve = 到达终态（完成或取消）；确认是否真下载成功。
+      const ok = await downloadManager.isDownloaded(info.id)
+      setIsDownloaded(ok)
+      setIsDownloading(false)
     } catch {
       stopPolling = true
       setIsDownloading(false)

@@ -190,6 +190,17 @@ class MusicFileManager {
     if (await FileManager.exists(path)) await FileManager.remove(path)
   }
 
+  /** 列出所有 part 文件对应的 musicId（去掉 .part 后缀）。 */
+  async listPartIds(): Promise<string[]> {
+    if (!(await FileManager.exists(this.downloadsDir))) return []
+    try {
+      const files = await FileManager.readDirectory(this.downloadsDir)
+      return files.filter(f => f.endsWith(".part")).map(f => f.slice(0, -".part".length))
+    } catch {
+      return []
+    }
+  }
+
   /** 统计目录内文件总大小（并行 stat） */
   private async sumDirSize(dir: string): Promise<number> {
     if (!(await FileManager.exists(dir))) return 0

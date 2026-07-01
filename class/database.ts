@@ -253,8 +253,8 @@ class Database {
          audio_url = excluded.audio_url,
          provider = excluded.provider,
          source_id = excluded.source_id,
-         is_downloaded = excluded.is_downloaded,
-         file_size = excluded.file_size`,
+         is_downloaded = MAX(is_downloaded, excluded.is_downloaded),
+         file_size = CASE WHEN excluded.is_downloaded = 1 THEN excluded.file_size ELSE file_size END`,
       [
         music.id, music.title, music.artist, music.album, music.duration,
         music.cover_url ?? null, music.audio_url ?? null, music.provider ?? null,
@@ -507,6 +507,8 @@ class Database {
   // Download Task
   async createDownloadTask(musicId: string): Promise<string> {
     if (!this.db) throw new Error("Database not initialized")
+    // 一首歌同时最多一条 download_task：先清掉旧行（失败/残留），避免重试时累积僵尸行。
+    try { await this.db.execute("DELETE FROM download_task WHERE music_id = ?", [musicId]) } catch {}
     const id = idGen.download()
     const now = Date.now()
     await this.db.execute(
