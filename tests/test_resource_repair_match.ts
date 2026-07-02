@@ -87,21 +87,58 @@ export const suite: TestSuite = defineSuite({
       }
     },
     {
-      name: "artist 完全不同：score 不过阈值",
+      name: "artist 完全不同（候选有明确别的歌手）：惩罚后不过阈值",
       fn: () => {
         const local = makeLocal()
         const cand = makeCand({ artist: "张学友" })
-        // 50(title) + 0(artist) = 50
+        // 50(title) + (-30)(明确其他歌手) = 20
         const score = scoreCandidate(local, cand)
+        expect(score).toBe(20)
         expect(score < MATCH_THRESHOLD).toBe(true)
       }
     },
     {
-      name: "title 完全不同：极低分",
+      name: "title 完全不同 + 其他歌手：负分",
       fn: () => {
         const local = makeLocal()
         const cand = makeCand({ title: "七里香", artist: "张学友" })
-        expect(scoreCandidate(local, cand)).toBe(0)
+        // 0(title) + (-30)(明确其他歌手) = -30
+        expect(scoreCandidate(local, cand)).toBe(-30)
+      }
+    },
+    {
+      name: "YouTube 标题内含艺人名（cand.artist 空）：+20 回退",
+      fn: () => {
+        const local = makeLocal({ title: "Afterglow", artist: "Goth Babe" })
+        // cand.artist 空（iTunes 富化失败），但艺人名在标题里
+        const cand = makeCand({ title: "Goth Babe - Afterglow", artist: "", album: undefined, duration: undefined })
+        // 25(title 包含) + 20(艺人名在标题) = 45
+        expect(scoreCandidate(local, cand)).toBe(45)
+      }
+    },
+    {
+      name: "同名异人优于异名：Goth Babe 版分 > Coldplay 版",
+      fn: () => {
+        const local = makeLocal({ title: "Afterglow", artist: "Goth Babe" })
+        // Coldplay 版：title 精确等 +50，但艺人明确不同 -30 = 20
+        const coldplay = makeCand({ id: "cp", title: "Afterglow", artist: "Coldplay", album: undefined, duration: undefined })
+        // Goth Babe 版：title 包含 +25，艺人名在标题 +20 = 45
+        const gothbabe = makeCand({ id: "gb", title: "Goth Babe - Afterglow", artist: "", album: undefined, duration: undefined })
+        const best = pickBestMatch(local, [coldplay, gothbabe])
+        expect(best!.item.id).toBe("gb")
+      }
+    },
+    {
+      name: "变体降权：干净版 > 现场/slowed 版",
+      fn: () => {
+        const local = makeLocal({ title: "Afterglow", artist: "Goth Babe" })
+        const clean = makeCand({ id: "clean", title: "Goth Babe - Afterglow", artist: "", album: undefined, duration: undefined })       // 45
+        const live = makeCand({ id: "live", title: "Goth Babe - Afterglow @ Vail", artist: "", album: undefined, duration: undefined }) // 45-15=30
+        const slowed = makeCand({ id: "slow", title: "Goth Babe - Afterglow (slowed + reverb)", artist: "", album: undefined, duration: undefined }) // 45-8=37
+        const ranked = rankCandidates(local, [live, slowed, clean], 3)
+        expect(ranked[0].item.id).toBe("clean")
+        expect(ranked[1].item.id).toBe("slow")
+        expect(ranked[2].item.id).toBe("live")
       }
     },
     {
@@ -122,9 +159,9 @@ export const suite: TestSuite = defineSuite({
       fn: () => {
         const local = makeLocal()
         const items: MusicData[] = [
-          makeCand({ id: "a", title: "稻香", artist: "翻唱者" }),           // 50
+          makeCand({ id: "a", title: "稻香", artist: "翻唱者" }),           // 50-30=20
           makeCand({ id: "b", title: "稻香", artist: "周杰伦" }),           // 80
-          makeCand({ id: "c", title: "稻香 (Live)", artist: "周杰伦" }),    // 80（title 归一化后相等）
+          makeCand({ id: "c", title: "稻香 (Live)", artist: "周杰伦" }),    // 65（live 降权 -15）
         ]
         const best = pickBestMatch(local, items)
         expect(best).toBeTruthy()
@@ -157,7 +194,7 @@ export const suite: TestSuite = defineSuite({
       fn: () => {
         const local = makeLocal()
         const items: MusicData[] = [
-          makeCand({ id: "low", title: "稻香", artist: "翻唱" }),                           // 50
+          makeCand({ id: "low", title: "稻香", artist: "翻唱" }),                           // 50-30=20
           makeCand({ id: "mid", title: "稻香", artist: "周杰伦" }),                         // 80
           makeCand({ id: "top", title: "稻香", artist: "周杰伦", album: "魔杰座", duration: 223 }), // 100
         ]

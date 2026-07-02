@@ -2,11 +2,11 @@ import type { Music } from "../database"
 import type { MusicData } from "../music"
 
 /**
- * 音源匹配打分工具（下载重试换源 + 历史修复共用）
+ * 音源匹配打分工具（下载重试换源 + resolveRealMusic 选源共用）
  *
  * 打分规则：
  *   - title 归一化后完全相等：+50；包含：+25
- *   - artist 归一化后完全相等：+30；包含：+15
+ *   - 艺人（artistScore，见下）：+30/+15/+20/0/-30
  *   - album  归一化后完全相等：+10
  *   - duration 差 ≤ 3s：+10；差 ≤ 10s：+5
  *   - 候选带 cover：+2（用来打破平分）
@@ -41,12 +41,9 @@ export function scoreCandidate(local: Pick<Music, "title" | "artist" | "album" |
     else if (ct.includes(lt) || lt.includes(ct)) score += 25
   }
 
-  const la = normalize(local.artist)
-  const ca = normalize(cand.artist)
-  if (la && ca) {
-    if (la === ca) score += 30
-    else if (ca.includes(la) || la.includes(ca)) score += 15
-  }
+  // 艺人匹配：mp3juice=YouTube，同名歌众多；富化失败时 cand.artist 为空但艺人名
+  // 常在标题里（"Artist - Song"）。artistScore 兼顾这点并惩罚"明确的其他歌手"。
+  score += artistScore(local.artist, cand, ct)
 
   const lb = normalize(local.album)
   const cb = normalize(cand.album)
@@ -62,7 +59,52 @@ export function scoreCandidate(local: Pick<Music, "title" | "artist" | "album" |
 
   if (cand.cover) score += 2
 
+  // 变体降权：现场/翻唱/变速变调版通常不是用户想要的原曲，让干净 studio 版优先。
+  score += variantPenalty(cand.title)
+
   return score
+}
+
+/**
+ * 变体惩罚（基于原始标题，因 normalize 会删括号/空格）：
+ *   - 现场版（live/现场/concert/amphitheater/@）：-15（音质与完整度通常最差）
+ *   - 翻唱/伴奏/纯音乐：-12
+ *   - 变速/变调/混音变体（slowed/sped up/reverb/nightcore/8d/remix）：-8
+ */
+function variantPenalty(title: string): number {
+  const t = (title || "").toLowerCase()
+  let p = 0
+  if (/\blive\b|现场|concert|amphitheater|@\s/.test(t)) p -= 15
+  if (/\bcover\b|karaoke|卡拉|伴奏|instrumental/.test(t)) p -= 12
+  if (/slowed|sped\s*up|reverb|nightcore|8d\s*audio|\bremix\b/.test(t)) p -= 8
+  return p
+}
+
+/**
+ * 艺人匹配打分（含 YouTube "Artist - Song" 标题回退 + 选错人惩罚）：
+ *   - 候选 artist 字段精确等 +30 / 互相包含 +15
+ *   - 否则本地艺人名出现在候选标题里（YouTube 惯例）+20
+ *   - 否则候选有明确 artist 但与本地不符 → -30（确信是别的歌手，如同名曲）
+ *   - 否则（候选无 artist 且标题无艺人名）0（信息不足，中性）
+ * 本地无艺人信息时返回 0（无从判断）。
+ */
+function artistScore(
+  localArtist: string | undefined,
+  cand: MusicData,
+  normalizedCandTitle?: string,
+): number {
+  const la = normalize(localArtist)
+  if (!la) return 0
+  const ca = normalize(cand.artist)
+  const ct = normalizedCandTitle ?? normalize(cand.title)
+
+  if (ca) {
+    if (la === ca) return 30
+    if (ca.includes(la) || la.includes(ca)) return 15
+  }
+  if (ct.includes(la)) return 20
+  if (ca) return -30  // 候选是明确的其他歌手（同名曲）
+  return 0
 }
 
 /**
