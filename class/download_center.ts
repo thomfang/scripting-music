@@ -55,6 +55,7 @@ class DownloadCenter {
   private active = new Set<string>()
   private concurrency = 3
   private subscribers = new Set<() => void>()
+  private completionSubscribers = new Set<(musicId: string) => void>()
   private awaiters = new Map<string, Awaiter[]>()
   private unsubProgress = new Map<string, () => void>()
 
@@ -88,6 +89,22 @@ class DownloadCenter {
   private notify() {
     for (const cb of this.subscribers) {
       try { cb() } catch (e) { console.error("[下载中心] 订阅回调异常:", e) }
+    }
+  }
+
+  /**
+   * 订阅「下载真正完成（有新歌入库）」事件。与 subscribe 分开：
+   * subscribe 每次任何状态变化都触发（进度频繁），completion 只在 completed 触发一次，
+   * 供资料库首页等据此静默重载 DB 派生数据（最近添加/歌曲数/艺人/专辑等）。
+   */
+  onDownloadCompleted(cb: (musicId: string) => void): () => void {
+    this.completionSubscribers.add(cb)
+    return () => this.completionSubscribers.delete(cb)
+  }
+
+  private notifyCompleted(musicId: string) {
+    for (const cb of this.completionSubscribers) {
+      try { cb(musicId) } catch (e) { console.error("[下载中心] 完成回调异常:", e) }
     }
   }
 
@@ -271,6 +288,9 @@ class DownloadCenter {
     // 完成项 5s 后自动移除（避免新下载时还看到旧的已完成）。
     const it = this.items.get(id)
     if (it && it.status === "completed") {
+      // 通知「有新歌入库」——供资料库首页静默刷新（cancelled 走 settle(ok=true)
+      // 但 status 是 "cancelled"，被此分支挡掉，不会误触发）。
+      this.notifyCompleted(id)
       const scheduledId = id
       setTimeout(() => {
         const cur = this.items.get(scheduledId)

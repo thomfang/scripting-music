@@ -17,6 +17,7 @@ import { PlaylistsView, PlaylistDetailPage } from "./playlists"
 import { RecentlyPlayedView, TopPlayedView, RecentlyAddedView } from "./smart_playlists"
 import { DownloadCenterView } from "./download_center"
 import { useDownloadCenter } from "../../class/use_download_center"
+import { downloadCenter } from "../../class/download_center"
 import {
   LibrarySectionHeader, QuickEntryGrid, QuickEntry,
   RecentlyAddedCard, FavoriteSongRow,
@@ -60,8 +61,22 @@ export function LibraryView() {
 
   useEffect(() => { load() }, [])
 
-  async function load() {
-    setLoading(true)
+  // 下载真正完成（有新歌入库）后静默刷新首页数据（最近添加/歌曲数/艺人/专辑等）。
+  // 800ms 防抖：批量下载多首时合并，只在末次完成后重载一次。
+  useEffect(() => {
+    let timer: any = null
+    const unsub = downloadCenter.onDownloadCompleted(() => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => { timer = null; load(true) }, 800)
+    })
+    return () => {
+      if (timer) clearTimeout(timer)
+      unsub()
+    }
+  }, [])
+
+  async function load(silent = false) {
+    if (!silent) setLoading(true)
     try {
       const [all, favorites, playlists, artists, albums] = await Promise.all([
         database.getAllMusic().catch(() => [] as Music[]),
@@ -117,7 +132,7 @@ export function LibraryView() {
     } catch (e) {
       console.error("[资料库] 加载失败:", e)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -289,7 +304,7 @@ export function LibraryView() {
                   key={c.playlist.id}
                   playlist={c.playlist}
                   musics={c.musics}
-                  destination={<PlaylistDetailPage playlistId={c.playlist.id} onDeleted={load} />}
+                  destination={<PlaylistDetailPage playlistId={c.playlist.id} onDeleted={() => load()} />}
                 />
               ))}
             </HStack>
