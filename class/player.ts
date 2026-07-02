@@ -407,7 +407,14 @@ class Player {
       if (hasCover) return
       if (token !== this.playToken) return
 
-      let coverUrl = music.cover_url ?? ""
+      // 只为 DB 中真实存在的歌补封面：发现页/在线详情页「完整播放」用 resolveRealMusic
+      // 得到 mp3juice 真实源但不入库，若为其 saveCover 会产生无法清理的孤立封面文件。
+      const dbMusic = await database.getMusic(music.id)
+      if (!dbMusic) return
+      if (token !== this.playToken) return
+
+      // 以 DB 中最新 cover_url 为准（可能已被之前的补全写入，避免重复 iTunes 搜索）
+      let coverUrl = dbMusic.cover_url ?? ""
 
       // 无 cover_url → iTunes Search 补元数据
       if (!coverUrl) {
@@ -440,9 +447,10 @@ class Player {
       if (token !== this.playToken) return
       await fileManager.saveCover(music.id, data)
 
-      // 更新 NowPlayingInfo 封面（锁屏 / 控制中心）
+      // 刷新封面依赖方（都需当前歌仍是本歌）
       if (this.currentMusic?.id === music.id) {
-        await this.updateNowPlayingInfo()
+        await this.updateNowPlayingInfo()          // 锁屏 / 控制中心
+        await this.saveNowPlayingToStorage(this.currentMusic)  // home 屏 widget
       }
       // 通知 use_cover.ts 刷新本地封面
       this.listeners.forEach(l => l.onCoverPatched?.(music.id))
