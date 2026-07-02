@@ -1,11 +1,8 @@
-import type { Music } from "../../class/database"
-import type { MusicData } from "../../class/music"
+import type { Music } from "../database"
+import type { MusicData } from "../music"
 
 /**
- * 资源修复 · 搜索结果打分工具
- *
- * 目标：对本地一首"缺失远程源"的歌，从 music.search() 返回的候选里挑最匹配的一条。
- * 纯函数、无副作用，方便单测。
+ * 音源匹配打分工具（下载重试换源 + 历史修复共用）
  *
  * 打分规则：
  *   - title 归一化后完全相等：+50；包含：+25
@@ -14,7 +11,7 @@ import type { MusicData } from "../../class/music"
  *   - duration 差 ≤ 3s：+10；差 ≤ 10s：+5
  *   - 候选带 cover：+2（用来打破平分）
  *
- * 阈值：score >= MATCH_THRESHOLD 视为自动匹配成功，否则保留为 uncertain。
+ * 阈值：score >= MATCH_THRESHOLD 视为自动匹配成功。
  */
 
 export const MATCH_THRESHOLD = 60
@@ -30,9 +27,7 @@ export function normalize(s: string | undefined | null): string {
   return s
     .toLowerCase()
     .trim()
-    // 去成对括号内的修饰词（英文 () 或中文（））
     .replace(/[\(\（][^\)\）]*(live|explicit|remix|acoustic|inst(?:rumental)?|cover|demo|伴奏|现场|翻唱)[^\)\）]*[\)\）]/g, "")
-    // 统一空白
     .replace(/\s+/g, "")
 }
 
@@ -72,7 +67,6 @@ export function scoreCandidate(local: Pick<Music, "title" | "artist" | "album" |
 
 /**
  * 从候选列表中挑最高分的一条。返回 null 表示列表为空。
- * 不做阈值判断 —— 由调用方按 MATCH_THRESHOLD 决定"自动匹配 vs 需手选"。
  */
 export function pickBestMatch(
   local: Pick<Music, "title" | "artist" | "album" | "duration">,
@@ -83,8 +77,7 @@ export function pickBestMatch(
 }
 
 /**
- * 对候选打分并按分数降序返回 top N，用于“换源”场景。
- * 相同 score 时保持原顺序（stable sort）。
+ * 对候选打分并按分数降序返回 top N。
  */
 export function rankCandidates(
   local: Pick<Music, "title" | "artist" | "album" | "duration">,
@@ -93,7 +86,6 @@ export function rankCandidates(
 ): MatchResult[] {
   if (!items || items.length === 0) return []
   const scored: MatchResult[] = items.map(it => ({ item: it, score: scoreCandidate(local, it) }))
-  // 降序按 score；Array.prototype.sort 在现代引擎上 stable
   scored.sort((a, b) => b.score - a.score)
   return scored.slice(0, topN)
 }

@@ -97,6 +97,7 @@ function PlayerPage() {
               size={coverBig}
               cornerRadius={14}
               shadow={{ color: "rgba(0,0,0,0.45)", radius: 30, y: 14 }}
+              offset={{ y: 24 , x:0}}
             />
             {/* 标题（紧跟封面，如 Apple Music） */}
             <Title padding={{ top: 24 }} onArtistTap={openArtist} onAlbumTap={openAlbum} />

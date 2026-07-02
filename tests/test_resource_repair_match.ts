@@ -7,7 +7,7 @@ import {
   scoreCandidate,
   pickBestMatch,
   rankCandidates,
-} from "../page/setting/resource_repair_match"
+} from "../class/sources/match_utils"
 
 /** 构造一首本地歌（只取打分需要的字段） */
 function makeLocal(p: Partial<Pick<Music, "title" | "artist" | "album" | "duration">> = {}): Pick<Music, "title" | "artist" | "album" | "duration"> {

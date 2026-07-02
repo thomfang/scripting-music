@@ -1,11 +1,11 @@
 import { Button, List, NavigationStack, Text, Section, useState, useEffect, HStack, Spacer, VStack, Toggle, NavigationLink, Script } from "scripting"
+import { AboutPage } from "./about"
 import { setting, StorageLocation } from "../../class/setting"
 import { switchStorageLocation } from "../../class/storage_migration"
 import { database } from "../../class/database"
 import { fileManager } from "../../class/file_manager"
 import { sleepTimerManager } from "../../class/sleep_timer"
 import { SleepTimerPage } from "./sleep_timer"
-import { ResourceRepairView } from "./resource_repair"
 import { safeRun } from "../../class/safe_run"
 
 export function SettingView() {
@@ -117,13 +117,6 @@ function StackView() {
         />
       </Section>
 
-      <Section header={<Text>{"资源管理"}</Text>}>
-        <NavigationLink
-          title="修复歌曲资源"
-          destination={<ResourceRepairView />}
-        />
-      </Section>
-
       <Section header={<Text>{"缓存管理"}</Text>}>
         <Button
           title="清除搜索历史"
@@ -133,17 +126,15 @@ function StackView() {
       </Section>
 
       <Section header={<Text>{"关于"}</Text>}>
-        <HStack>
-          <Text>{"版本"}</Text>
-          <Spacer />
-          <Text foregroundStyle="secondaryLabel">{Script.metadata.version}</Text>
-        </HStack>
-        <VStack alignment="leading" spacing={4}>
-          <Text font="headline">{Script.metadata.localizedName}</Text>
-          <Text font="subheadline" foregroundStyle="secondaryLabel">
-            一个功能完整的音乐播放器
-          </Text>
-        </VStack>
+        <NavigationLink
+          destination={<AboutPage />}
+        >
+          <HStack>
+            <Text>{Script.metadata.localizedName ?? "Scripting Music"}</Text>
+            <Spacer />
+            <Text foregroundStyle="secondaryLabel">{Script.metadata.version}</Text>
+          </HStack>
+        </NavigationLink>
       </Section>
     </List>
   )

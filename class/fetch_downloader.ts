@@ -6,7 +6,7 @@ import { MusicProvider, music } from "./music"
 import { lyrics } from "./sources/lyrics"
 import { ID3Writer } from "../module/browser-id3-writer"
 import { detectAudioFormat } from "./audio_format"
-import { MATCH_THRESHOLD, pickBestMatch, rankCandidates } from "../page/setting/resource_repair_match"
+import { MATCH_THRESHOLD, pickBestMatch, rankCandidates } from "./sources/match_utils"
 
 type MusicInfo = {
   id: string

@@ -13,6 +13,8 @@ type PlayerEvent = {
   onQueueChange?: (queue: Music[]) => void
   onPlayModeChange?: (mode: PlayMode) => void
   onError?: (error: string) => void
+  /** 封面补下完成（本地文件已落盘），use_cover.ts 订阅此事件刷新 UI */
+  onCoverPatched?: (musicId: string) => void
 }
 
 class Player {
@@ -377,6 +379,8 @@ class Player {
 
     // 开始播放只刷新「最近播放」；真正计数（play_count+1）由 checkPlayCompletion 在 ≥80% 时唯一负责。
     await database.touchLastPlayed(music.id)
+    // 补封面：fire-and-forget，不阻塞播放；token 守卫防止切歌后写旧歌封面。
+    this.patchCoverIfMissing(music, token).catch(() => {})
   }
 
   private async playAtIndex(index: number): Promise<void> {
@@ -385,6 +389,63 @@ class Player {
       Storage.set(Player.STORAGE_INDEX_KEY, index)
       this.listeners.forEach(l => l.onQueueChange?.(this.queue))
       await this.playMusic(this.queue[index])
+    }
+  }
+
+  /**
+   * 播放时自动补封面。
+   * 流程：① 有本地封面 → 直接返回；② 无 cover_url → iTunes 搜索补全 DB；
+   * ③ 下载封面并落盘；④ 刷新 NowPlayingInfo + emit onCoverPatched 通知 UI。
+   * 全程 fire-and-forget，任何异常静默。
+   */
+  private async patchCoverIfMissing(music: Music, token: number): Promise<void> {
+    try {
+      const hasCover = await fileManager.coverExists(music.id)
+      if (hasCover) return
+      if (token !== this.playToken) return
+
+      let coverUrl = music.cover_url ?? ""
+
+      // 无 cover_url → iTunes Search 补元数据
+      if (!coverUrl) {
+        const { enrichByTitle } = await import("./sources/itunes_meta")
+        const term = music.artist ? `${music.title} ${music.artist}` : music.title
+        const meta = await enrichByTitle(term, "CN")
+        if (!meta.matched || !meta.cover) return
+        coverUrl = meta.cover
+        // 更新 DB cover_url（upsert 保留其余字段）
+        await database.addMusic({ ...music, cover_url: coverUrl })
+        if (token !== this.playToken) return
+        // 同步内存中的 currentMusic 并通知 UI（remoteUrl 刷新）
+        if (this.currentMusic?.id === music.id) {
+          this.currentMusic = { ...this.currentMusic, cover_url: coverUrl }
+          this.listeners.forEach(l => l.onMusicChange?.(this.currentMusic!))
+        }
+      }
+
+      if (!coverUrl || token !== this.playToken) return
+
+      // 下载封面并落盘
+      const { fetch } = await import("scripting")
+      const resp = await fetch(coverUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15" }
+      })
+      if (!resp.ok) return
+      const data = await resp.bytes()
+      if (!data || data.length === 0) return
+
+      if (token !== this.playToken) return
+      await fileManager.saveCover(music.id, data)
+
+      // 更新 NowPlayingInfo 封面（锁屏 / 控制中心）
+      if (this.currentMusic?.id === music.id) {
+        await this.updateNowPlayingInfo()
+      }
+      // 通知 use_cover.ts 刷新本地封面
+      this.listeners.forEach(l => l.onCoverPatched?.(music.id))
+      console.log(`[Player] patchCoverIfMissing: 封面已补 ${music.id}`)
+    } catch (e) {
+      console.log(`[Player] patchCoverIfMissing 静默失败: ${e}`)
     }
   }
 
