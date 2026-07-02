@@ -2,6 +2,8 @@
 
 项目级记忆。workspace memory 只保留本文件位置；后续 Scripting Music 相关长期信息写这里。
 
+> **Spec 目录约定**：所有 spec / 需求设计文档统一写在项目根目录的 `specs/` 下（命名 `YYYY-MM-DD_HH-mm_标题.md` 或 `YYYY-MM-DD_标题.md`）。历史上曾散落于 `mydocs/specs/` 与 `.specs/`，已于 2026-07-02 全部合并到 `specs/`，勿再新建其它 spec 目录。
+
 ## 项目位置与 Git
 
 - 项目根目录：`/private/var/mobile/Library/Mobile Documents/iCloud~com~thomfang~Scripting/Documents/scripts/Scripting Music/`
@@ -248,17 +250,3 @@
   - 队列可含**未入库曲**（发现页 itunes_preview 试听/在线曲）；收藏/加歌单前必须 `database.getMusic` 判断，非入库曲 `Dialog.alert` 提示（`addMusicToPlaylist` 对不存在 music 会 **throw**；`toggleFavorite` 对 null 静默 return false）。
   - 队列**允许同曲重复**（addToQueue/playNext 不去重）：`key`/`itemId` 必须用 `${music.id}#${realIdx}`，不能用裸 `music.id`（会 key 冲突/行串扰）。
   - shuffle 模式下真实下一首由 `nextShuffleIndex` 即时随机，`queue.slice` 顺序不代表播放顺序 → header 降级文案「队列 · N 首（随机播放）」。
-
-## Specs
-
-- `mydocs/specs/2026-06-29_12-55_MP3JuiceSource.md`
-- `mydocs/specs/2026-06-29_17-15_LyricsLocal_PlayerRedesign.md`
-- `mydocs/specs/2026-06-29_19-49_PlayerLyricOverflowFix.md`
-- `mydocs/specs/2026-06-29_22-55_LibraryRedesign.md`
-- `mydocs/specs/2026-06-30_00-55_ArtistImageDetail.md`
-- `mydocs/specs/2026-06-30_09-35_AlbumImageDetail.md`
-- `mydocs/specs/2026-06-30_09-50_LibraryCardsRedesign.md`
-- `mydocs/specs/2026-06-30_23-56_PlayerEntityNav_SearchEntityModes.md`
-- `mydocs/specs/2026-07-01_07-43_OnlineArtistAlbumSearch_SheetTint.md`
-- `mydocs/specs/2026-07-01_08-56_DownloadCenter.md`
-- `mydocs/specs/2026-07-01_23-57_QueueSheetRedesign.md`
