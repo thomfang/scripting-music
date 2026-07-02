@@ -1,6 +1,6 @@
 # Scripting Music
 
-一款运行在 [Scripting](https://github.com/nicklockwood/Scripting) App 内的 iOS 音乐播放器，使用 TypeScript + SwiftUI-like DSL 编写。
+一款运行在 [Scripting](https://apps.apple.com/us/app/scripting/id6479691128) App 内的 iOS 音乐播放器，使用 TypeScript + SwiftUI-like DSL 编写。
 
 ## 功能特性
 
