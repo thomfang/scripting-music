@@ -373,6 +373,15 @@ class Database {
     )
   }
 
+  /** 播放时补封面专用：只更新 cover_url，不动其余字段。 */
+  async updateCoverUrl(id: string, coverUrl: string): Promise<void> {
+    if (!this.db) throw new Error("Database not initialized")
+    await this.db.execute(
+      "UPDATE music SET cover_url = ? WHERE id = ?",
+      [coverUrl, id]
+    )
+  }
+
   async toggleFavorite(id: string): Promise<boolean> {
     if (!this.db) throw new Error("Database not initialized")
     const music = await this.getMusic(id)

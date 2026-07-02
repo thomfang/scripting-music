@@ -182,6 +182,7 @@
   - **取消坑**：abort 信号在部分环境不能中断已开始的 body 流 → 取消改用循环内 `isCancelled` 标志（与暂停同机制）+ 流末入库前守卫；abort 保留作双保险。
   - **不预入库**（discover/online_detail 下载路径）：歌只在 `processDownloadedFile` 成功时 `addMusic(is_downloaded:true)`，取消/失败不在「最近添加」留残；加歌单路径仍预入库但都有 `if(!existing)` 守卫。
   - 新增 `RecentlyAddedView`（smart_playlists.tsx，getAllMusic 前50）；首页「最近添加」see-all 指向它（原误指全部歌曲）。
+  - `4603aaa7` 播放时自动补封面(patchCoverIfMissing) + 删修复工具 + match_utils 迁移
   - **对抗性 review 修复 a2d275d4**：P1-A `download_task` 行不再只增不减——`createDownloadTask` 先删同 musicId 旧行（幂等）+ terminal(完成/取消/abort/暂停态取消) 删 DB 行；`search_result_card` 终态改用 `enqueue` promise + `isDownloaded` 判定（不再靠 DB 行，因终态行已删）。P2-A `enqueue` 多调用方共享同一 terminal（awaiters 改数组，addAwaiter/settleAwaiters），不再误 resolve 旧 awaiter。P3-A `resume` 受 concurrency 约束（满则回队）；`runEngine` 对引擎已有活体 task 改调 `resumeDownload`（防 `downloadMusic` 因 `tasks.has` 静默早退导致 item 卡死）；启动清理孤儿 `.part`（`fileManager.listPartIds`）。P3-B `database.addMusic` upsert 用 `is_downloaded=MAX(...)` + `file_size=CASE WHEN excluded.is_downloaded=1` 防降级。
 
 

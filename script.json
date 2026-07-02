@@ -1,43 +1,41 @@
 {
-  "iconImage" : null,
-  "icon" : "music.note",
-  "runInApp" : false,
-  "description" : null,
-  "localizedDescriptions" : {
-    "es" : "",
-    "zh" : "",
-    "ru" : "",
-    "fr" : "",
-    "en" : "",
-    "de" : "",
-    "pt" : "",
-    "ja" : "",
-    "it" : ""
-  },
+  "description" : "",
   "intentInputTypes" : [
 
   ],
-  "name" : "Scripting Music",
-  "author" : {
-    "name" : "001",
-    "email" : null,
-    "homepage" : "https:\/\/github.com\/001ProMax"
-  },
-  "color" : "rgba(255, 48, 0, 1.00)",
-  "version" : "2.0.0",
+  "icon" : "music.note",
   "localizedNames" : {
-    "ru" : "",
-    "it" : "",
     "en" : "",
-    "es" : "",
-    "de" : "",
-    "pt" : "",
     "zh" : "",
-    "ja" : "",
-    "fr" : ""
+    "it" : "",
+    "de" : "",
+    "es" : "",
+    "ru" : "",
+    "pt" : "",
+    "fr" : "",
+    "ja" : ""
   },
+  "version" : "2.0.0",
+  "permissions" : null,
+  "name" : "Scripting Music",
+  "runInApp" : false,
+  "author" : null,
   "contributors" : [
 
   ],
-  "remoteResource" : null
+  "remoteResource" : null,
+  "iconImage" : "",
+  "color" : "rgba(255, 48, 0, 1.00)",
+  "entry" : "index.tsx",
+  "localizedDescriptions" : {
+    "it" : "",
+    "ja" : "",
+    "en" : "",
+    "fr" : "",
+    "zh" : "",
+    "pt" : "",
+    "de" : "",
+    "ru" : "",
+    "es" : ""
+  }
 }

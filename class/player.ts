@@ -400,6 +400,9 @@ class Player {
    */
   private async patchCoverIfMissing(music: Music, token: number): Promise<void> {
     try {
+      // iTunes preview 曲目是临时对象（不入 DB），跳过补封面
+      if (music.provider === "itunes_preview") return
+
       const hasCover = await fileManager.coverExists(music.id)
       if (hasCover) return
       if (token !== this.playToken) return
@@ -413,8 +416,8 @@ class Player {
         const meta = await enrichByTitle(term, "CN")
         if (!meta.matched || !meta.cover) return
         coverUrl = meta.cover
-        // 更新 DB cover_url（upsert 保留其余字段）
-        await database.addMusic({ ...music, cover_url: coverUrl })
+        // 只更新 cover_url 一列，避免 addMusic upsert 误覆盖 audio_url 等字段
+        await database.updateCoverUrl(music.id, coverUrl)
         if (token !== this.playToken) return
         // 同步内存中的 currentMusic 并通知 UI（remoteUrl 刷新）
         if (this.currentMusic?.id === music.id) {
