@@ -75,13 +75,19 @@ Scripting Music/
 
 ## 运行环境
 
-- **iOS 17+**（需安装 [Scripting App](https://apps.apple.com/app/scripting/id1666093381)）
+- **iOS 17+**（需安装 [Scripting App](https://apps.apple.com/us/app/scripting/id6479691128)）
 - Scripting App 版本 ≥ 2.x
 - 不需要 Mac、不需要 Xcode
 
+## 一键安装
+
+在已安装 Scripting App 的设备上，点击以下链接即可一键导入本项目：
+
+**[👉 点击安装 Scripting Music](https://scripting.fun/import_scripts?urls=%5B%22https%3A%2F%2Fgithub.com%2Fthomfang%2Fscripting-music%22%5D)**
+
 ## 开始使用
 
-1. 在 Scripting App 内克隆或导入本项目。
+1. 点击上方「一键安装」链接，在 Scripting App 中导入项目。
 2. 运行入口文件 `index.tsx` 或在 App 内点击「Scripting Music」脚本。
 3. 进入「搜索」Tab 搜索歌曲，点击下载按钮将歌曲保存到本地资料库。
 4. 进入「资料库」Tab 管理已下载的歌曲。
