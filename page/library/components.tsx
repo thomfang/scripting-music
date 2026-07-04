@@ -483,3 +483,40 @@ export function PlaylistCollageCard({ playlist, musics, destination }: { playlis
     </NavigationLink>
   )
 }
+
+// ---- 播放列表空态 CTA（新建 + 导入）----
+
+function CtaTile({ icon, label, color, action }: { icon: string, label: string, color: string, action: () => void }) {
+  const SIZE = 130
+  const clip = { type: "rect", cornerRadius: 14 } as any
+  return (
+    <Button action={action}>
+      <VStack alignment="leading" spacing={6} frame={{ width: SIZE }}>
+        <ZStack
+          frame={{ width: SIZE, height: SIZE }}
+          background="secondarySystemBackground"
+          clipShape={clip}
+          overlay={
+            <VStack spacing={8}>
+              <Image systemName={icon} font={{ name: "system", size: 34 }} foregroundStyle={color as any} />
+            </VStack>
+          }
+        />
+        <Text font="subheadline" fontWeight="semibold" lineLimit={1} frame={{ width: SIZE }} foregroundStyle="label">{label}</Text>
+      </VStack>
+    </Button>
+  )
+}
+
+/**
+ * 零歌单时的空态操作卡：两块 130pt 瓦片（新建 / 导入），与播放列表 rail 同尺寸。
+ * onCreate / onImport 由宿主页提供（首页复用 usePlaylistImport + 内联新建）。
+ */
+export function PlaylistEmptyCTA({ onCreate, onImport }: { onCreate: () => void, onImport: () => void }) {
+  return (
+    <HStack spacing={14}>
+      <CtaTile icon="plus.circle.fill" label="新建播放列表" color="systemPink" action={onCreate} />
+      <CtaTile icon="square.and.arrow.down.fill" label="导入歌单" color="systemBlue" action={onImport} />
+    </HStack>
+  )
+}

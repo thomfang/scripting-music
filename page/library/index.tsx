@@ -22,7 +22,10 @@ import {
   LibrarySectionHeader, QuickEntryGrid, QuickEntry,
   RecentlyAddedCard, FavoriteSongRow,
   ArtistCircleCard, AlbumCoverCard, PlaylistCollageCard, HorizontalCardRail,
+  PlaylistEmptyCTA,
 } from "./components"
+import { usePlaylistImport } from "../components/use_playlist_import"
+import { safeRun } from "../../class/safe_run"
 
 const RECENT_LIMIT = 12
 const FAVORITE_LIMIT = 5
@@ -58,6 +61,16 @@ export function LibraryView() {
   const [loading, setLoading] = useState(true)
   const playerState = usePlayerState()
   const { activeCount } = useDownloadCenter()
+  const { startImport, importSheet } = usePlaylistImport({ onImported: () => load(true) })
+
+  async function createPlaylist() {
+    const name = await Dialog.prompt({ title: "新建播放列表", placeholder: "播放列表名称" })
+    if (!name) return
+    await safeRun(async () => {
+      await database.createPlaylist(name)
+      await load(true)
+    }, { title: "新建失败", tag: "library.createPlaylist" })
+  }
 
   useEffect(() => { load() }, [])
 
@@ -172,6 +185,8 @@ export function LibraryView() {
         </NavigationLink>
       </ToolbarItem>
 
+      <ToolbarSpacer placement="topBarTrailing" />
+
       <ToolbarItem placement="topBarTrailing">
         <Menu label={<Image systemName="play.circle" />}>
           <Button title="播放全部" systemImage="play.fill" action={() => playAll(false)} />
@@ -196,6 +211,7 @@ export function LibraryView() {
   return (
     <List
       toolbar={toolbarEl}
+      sheet={importSheet}
     >
       {/* A — 快捷入口宫格 */}
       <Section listRowInsets={16 as any} listRowSeparator="hidden">
@@ -285,28 +301,32 @@ export function LibraryView() {
         </Section>
       )}
 
-      {/* 播放列表 — 横向拼图卡 */}
-      {data && data.playlistCards.length > 0 && (
+      {/* 播放列表 — 横向拼图卡（零歌单时常显空态 CTA，保证新建/导入入口可达） */}
+      {data && (
         <Section
           header={
             <LibrarySectionHeader
               icon="square.stack.3d.up.fill"
               title="播放列表"
-              subtitle={`${data.playlistCount} 个`}
-              seeAllDestination={<PlaylistsView />}
+              subtitle={data.playlistCount > 0 ? `${data.playlistCount} 个` : undefined}
+              seeAllDestination={data.playlistCount > 0 ? <PlaylistsView /> : undefined}
             />
           }
         >
           <ScrollView axes="horizontal" listRowInsets={0} listRowSeparator="hidden">
             <HStack spacing={14} padding={16}>
-              {data.playlistCards.map(c => (
-                <PlaylistCollageCard
-                  key={c.playlist.id}
-                  playlist={c.playlist}
-                  musics={c.musics}
-                  destination={<PlaylistDetailPage playlistId={c.playlist.id} onDeleted={() => load()} />}
-                />
-              ))}
+              {data.playlistCards.length > 0 ? (
+                data.playlistCards.map(c => (
+                  <PlaylistCollageCard
+                    key={c.playlist.id}
+                    playlist={c.playlist}
+                    musics={c.musics}
+                    destination={<PlaylistDetailPage playlistId={c.playlist.id} onDeleted={() => load()} />}
+                  />
+                ))
+              ) : (
+                <PlaylistEmptyCTA onCreate={createPlaylist} onImport={startImport} />
+              )}
             </HStack>
           </ScrollView>
         </Section>

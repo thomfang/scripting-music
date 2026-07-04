@@ -9,6 +9,7 @@ import { usePlayerState } from "../../class/player_state"
 import { fileManager } from "../../class/file_manager"
 import { CoverCollage } from "./components"
 import { PlaylistPickerContent } from "../components/playlist_picker"
+import { usePlaylistImport } from "../components/use_playlist_import"
 import { SongRow } from "../components/song_row"
 import { BatchDownloadProgressSection } from "../components/batch_download_progress"
 import { playlistShare } from "../../class/playlist_share"
@@ -19,8 +20,7 @@ import { downloadCenter } from "../../class/download_center"
 export function PlaylistsView() {
   const playlists = useObservable<Playlist[]>([])
   const [collageMusics, setCollageMusics] = useState<Record<string, Music[]>>({})
-  const [showImportPicker, setShowImportPicker] = useState(false)
-  const [pendingImportFile, setPendingImportFile] = useState<string | null>(null)
+  const { startImport, importSheet } = usePlaylistImport({ onImported: loadPlaylists })
 
   async function loadPlaylists() {
     await safeRun(async () => {
@@ -44,93 +44,18 @@ export function PlaylistsView() {
     }, { title: "新建失败", tag: "playlists.create" })
   }
 
-  async function importPlaylist() {
-    await safeRun(async () => {
-      const files = await DocumentPicker.pickFiles({
-        allowsMultipleSelection: false,
-      })
-      if (!files || files.length === 0) return
-      const filePath = files[0]
-
-      // 弹出选择对话框：新建 or 合并
-      // 0 = 新建歌单，1 = 合并到已有歌单，null = 取消
-      const choice = await Dialog.actionSheet({
-        title: "导入歌单",
-        message: "选择导入方式",
-        actions: [
-          { label: "新建歌单" },
-          { label: "合并到已有歌单" },
-        ],
-      })
-
-      if (choice == null) {
-        DocumentPicker.stopAcessingSecurityScopedResources()
-        return
-      }
-
-      if (choice === 1) {
-        // 先刷新歌单列表，然后显示 picker
-        await loadPlaylists()
-        if (playlists.value.length === 0) {
-          DocumentPicker.stopAcessingSecurityScopedResources()
-          await Dialog.alert({ title: "暂无歌单", message: "请先创建一个歌单后再选择合并" })
-          return
-        }
-        setPendingImportFile(filePath)
-        setShowImportPicker(true)
-        return
-      }
-
-      // 新建歌单
-      const stats = await playlistShare.importFromFile(filePath)
-      DocumentPicker.stopAcessingSecurityScopedResources()
-      await loadPlaylists()
-      await Dialog.alert({
-        title: "导入完成",
-        message: `歌单：${stats.playlistName}\n共 ${stats.total} 首\n新增歌曲：${stats.newMusics}\n已存在：${stats.existedMusics}\n加入歌单：${stats.addedToPlaylist}\n已在歌单：${stats.alreadyInPlaylist}`
-      })
-    }, { title: "导入失败", tag: "playlists.import" })
-  }
-
-  async function handleMergeSelect(targetPlaylistId: string) {
-    setShowImportPicker(false)
-    const filePath = pendingImportFile
-    setPendingImportFile(null)
-    if (!filePath) return
-
-    await safeRun(async () => {
-      const stats = await playlistShare.importFromFile(filePath, { mergeIntoPlaylistId: targetPlaylistId })
-      DocumentPicker.stopAcessingSecurityScopedResources()
-      await loadPlaylists()
-      await Dialog.alert({
-        title: "导入完成",
-        message: `已合并到：${stats.playlistName}\n共 ${stats.total} 首\n新增歌曲：${stats.newMusics}\n已存在：${stats.existedMusics}\n加入歌单：${stats.addedToPlaylist}\n已在歌单：${stats.alreadyInPlaylist}`
-      })
-    }, { title: "合并失败", tag: "playlists.merge" })
-  }
-
-  function handleImportPickerDismiss() {
-    setShowImportPicker(false)
-    setPendingImportFile(null)
-    DocumentPicker.stopAcessingSecurityScopedResources()
-  }
-
   useEffect(() => { loadPlaylists() }, [])
 
   return (
     <List
       navigationTitle="播放列表"
-      sheet={{
-        isPresented: showImportPicker,
-        onChanged: (v: boolean) => { if (!v) handleImportPickerDismiss() },
-        content: <PlaylistPickerContent onSelect={handleMergeSelect} onDismiss={handleImportPickerDismiss} />
-      }}
+      sheet={importSheet}
       toolbar={
         <Toolbar>
           <ToolbarItem placement="topBarTrailing">
             <Menu label={<Image systemName="plus" />}>
               <Button title="新建播放列表" systemImage="plus.circle" action={createPlaylist} />
-              <Button title="导入歌单…" systemImage="square.and.arrow.down" action={importPlaylist} />
+              <Button title="导入歌单…" systemImage="square.and.arrow.down" action={startImport} />
             </Menu>
           </ToolbarItem>
         </Toolbar>
