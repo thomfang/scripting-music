@@ -18,6 +18,10 @@ export function normalizeHomeSection(value: unknown): HomeSection {
   return isHomeSection(value) ? value : DEFAULT_HOME_SECTION
 }
 
+export function markHomeSectionVisited(visited: HomeSection[], section: HomeSection): HomeSection[] {
+  return visited.includes(section) ? visited : [...visited, section]
+}
+
 export type HomeMiniPlayerGeometry = {
   outerRadius: number
   contentInset: number

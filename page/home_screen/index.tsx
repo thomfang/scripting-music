@@ -15,14 +15,17 @@ import {
   VStack,
 } from "scripting"
 import { PlayerStateProvider, usePlayerState } from "../../class/player_state"
-import { PlayerView } from "../player"
-import { HomeMiniPlayerContainer } from "./mini_player_container"
-import { MainSectionContent } from "../main_section_content"
 import { initializeCoreRuntime, initializeDownloadRuntime } from "../../class/app_runtime"
+import { PlayerView } from "../player"
+import { CachedMainSectionContent } from "../main_section_content"
+import { HomeLibraryActionsMenu } from "../library/toolbar_actions"
+import { HomeSectionSwitcher } from "./section_switcher"
+import { HomeMiniPlayerContainer, HOME_MINI_PLAYER_RESERVED_HEIGHT } from "./mini_player_container"
 import {
   HomeSection,
   HOME_SECTION_KEY,
   homeSectionTitle,
+  markHomeSectionVisited,
   normalizeHomeSection,
 } from "../home_screen_model"
 
@@ -136,6 +139,7 @@ function HomeShell({
   const [section, setSection] = useState<HomeSection>(() =>
     normalizeHomeSection(Storage.get<string>(HOME_SECTION_KEY))
   )
+  const [visitedSections, setVisitedSections] = useState<HomeSection[]>(() => [section])
   const [showPlayer, setShowPlayer] = useState(false)
   const navigationPath = useObservable<string[]>([])
   const { currentMusic } = usePlayerState()
@@ -143,6 +147,7 @@ function HomeShell({
   function selectSection(next: HomeSection) {
     if (next === section) return
     navigationPath.setValue([])
+    setVisitedSections(visited => markHomeSectionVisited(visited, next))
     setSection(next)
     Storage.set(HOME_SECTION_KEY, next)
   }
@@ -153,22 +158,11 @@ function HomeShell({
 
   const toolbar = (
     <Toolbar>
-      <ToolbarItem placement="topBarLeading">
-        <SectionButton
-          section="library"
-          current={section}
-          systemImage="music.note.square.stack"
-          action={selectSection}
-        />
-      </ToolbarItem>
       <ToolbarItem placement="principal">
-        <HStack spacing={18}>
-          <SectionButton section="discover" current={section} systemImage="sparkles" action={selectSection} />
-          <SectionButton section="search" current={section} systemImage="magnifyingglass" action={selectSection} />
-        </HStack>
+        <HomeSectionSwitcher current={section} onSelect={selectSection} />
       </ToolbarItem>
       <ToolbarItem placement="topBarTrailing">
-        <SectionButton section="settings" current={section} systemImage="gear" action={selectSection} />
+        <HomeLibraryActionsMenu />
       </ToolbarItem>
     </Toolbar>
   )
@@ -194,48 +188,17 @@ function HomeShell({
         content: currentMusic ? <PlayerView /> : <VStack />
       }}
     >
-      <MainSectionContent
+      <CachedMainSectionContent
         section={section}
+        visited={visitedSections}
+        showsLibraryToolbarActions={false}
+        activeTopInset={downloadWarning ? downloadWarningBar : undefined}
+        activeBottomInset={<HomeMiniPlayerContainer onOpenPlayer={openPlayer} />}
+        inactiveBottomInset={<VStack frame={{ height: HOME_MINI_PLAYER_RESERVED_HEIGHT }} />}
         navigationTitle={homeSectionTitle(section)}
         navigationBarTitleDisplayMode="inline"
         toolbar={toolbar}
-        safeAreaInset={{
-          ...(downloadWarning ? {
-            top: { spacing: 0, content: downloadWarningBar }
-          } : {}),
-          bottom: {
-            spacing: 0,
-            content: <HomeMiniPlayerContainer onOpenPlayer={openPlayer} />
-          }
-        }}
       />
     </NavigationStack>
-  )
-}
-
-function SectionButton({
-  section,
-  current,
-  systemImage,
-  action,
-}: {
-  section: HomeSection
-  current: HomeSection
-  systemImage: string
-  action: (section: HomeSection) => void
-}) {
-  const selected = section === current
-  return (
-    <Button
-      action={() => action(section)}
-      buttonStyle="plain"
-      accessibilityLabel={homeSectionTitle(section)}
-    >
-      <Image
-        systemName={systemImage}
-        foregroundStyle={selected ? "systemPink" : "secondaryLabel"}
-        font="headline"
-      />
-    </Button>
   )
 }
