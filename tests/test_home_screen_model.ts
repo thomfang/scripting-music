@@ -5,6 +5,7 @@ import {
   homeSectionTitle,
   isHomeSection,
   makeConcentricMiniPlayerGeometry,
+  markHomeSectionVisited,
   normalizeHomeSection,
   supportsLiquidGlass,
 } from "../page/home_screen_model"
@@ -38,6 +39,14 @@ export const suite: TestSuite = defineSuite({
       fn: () => {
         expect(normalizeHomeSection("search")).toBe("search")
         expect(normalizeHomeSection("settings")).toBe("settings")
+      }
+    },
+    {
+      name: "已访问 section 只追加一次并保持原顺序",
+      fn: () => {
+        const first = markHomeSectionVisited(["library"], "search")
+        expect(first).toEqual(["library", "search"])
+        expect(markHomeSectionVisited(first, "library") === first).toBe(true)
       }
     },
     {

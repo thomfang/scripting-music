@@ -6,6 +6,8 @@ const HORIZONTAL_MARGIN = 12
 const BOTTOM_MARGIN = 10
 const GEOMETRY = makeConcentricMiniPlayerGeometry(28, 8)
 
+export const HOME_MINI_PLAYER_RESERVED_HEIGHT = 66
+
 /** Home Tab 专用的悬浮 MiniPlayer 外壳；播放内容继续复用全局 MiniPlayer。 */
 export function HomeMiniPlayerContainer({ onOpenPlayer }: { onOpenPlayer: () => void }) {
   const content = (

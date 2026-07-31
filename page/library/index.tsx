@@ -16,6 +16,7 @@ import { AlbumsView, AlbumDetail } from "./albums"
 import { PlaylistsView, PlaylistDetailPage } from "./playlists"
 import { RecentlyPlayedView, TopPlayedView, RecentlyAddedView } from "./smart_playlists"
 import { DownloadCenterView } from "./download_center"
+import { playLibrary } from "./toolbar_actions"
 import { useDownloadCenter } from "../../class/use_download_center"
 import { downloadCenter } from "../../class/download_center"
 import {
@@ -53,7 +54,7 @@ type LibraryData = {
   coverExists: Record<string, boolean>
 }
 
-export function LibraryView() {
+export function LibraryView({ showsToolbarActions = true }: { showsToolbarActions?: boolean } = {}) {
   // 注：page/index.tsx 传入的 navigationTitle / toolbar(退出按钮)由框架自动
   // 应用到本组件根视图，无需也不能手动再渲染一遍（否则退出按钮会重复）。
   // 本组件只负责补一个「播放全部/随机」Menu，SwiftUI 会与框架的 toolbar 合并。
@@ -158,11 +159,7 @@ export function LibraryView() {
   }
 
   async function playAll(shuffle: boolean) {
-    const list = data?.all ?? []
-    if (list.length === 0) return
-    const queue = shuffle ? [...list].sort(() => Math.random() - 0.5) : list
-    player.setQueue(queue, 0)
-    await player.play(queue[0])
+    await playLibrary(shuffle, data?.all ?? [])
   }
 
   const quickEntries: QuickEntry[] = data ? [
@@ -172,7 +169,7 @@ export function LibraryView() {
     { key: "top", label: "最常播放", icon: "flame.fill", color: "systemOrange", count: data.topPlayedCount, destination: <TopPlayedView /> },
   ] : []
 
-  const toolbarEl = (
+  const toolbarEl = showsToolbarActions ? (
     <Toolbar>
       <ToolbarItem placement="topBarTrailing">
         <NavigationLink destination={<DownloadCenterView />}>
@@ -194,7 +191,7 @@ export function LibraryView() {
         </Menu>
       </ToolbarItem>
     </Toolbar>
-  )
+  ) : undefined
 
   if (loading) {
     return (
