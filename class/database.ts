@@ -90,10 +90,20 @@ class Database {
 
   async init(): Promise<void> {
     await fileManager.init()
-    const basePath = setting.getBasePath()
-    this.dbPath = basePath + "/music.db"
-    this.db = SQLite.open(this.dbPath)
-    await this.createTables()
+    const dbPath = setting.getBasePath() + "/music.db"
+    const opened = SQLite.open(dbPath)
+    this.dbPath = dbPath
+    this.db = opened
+    try {
+      await this.createTables()
+    } catch (error) {
+      // SQLite.Database 没有显式 close API；至少立即丢弃失败句柄，避免后续调用误用半初始化 DB。
+      if (this.db === opened) {
+        this.db = null
+        this.dbPath = ""
+      }
+      throw error
+    }
   }
 
   /** 当前 db 文件绝对路径（供迁移逻辑使用） */

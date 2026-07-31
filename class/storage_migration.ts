@@ -13,18 +13,27 @@ import { setting, StorageLocation } from "./setting"
  *
  * 失败自动回滚：重新按旧 location 打开数据库，保证应用继续可用。
  */
+let migrationInProgress = false
+
+export function isStorageMigrationInProgress(): boolean {
+  return migrationInProgress
+}
+
 export async function switchStorageLocation(newLocation: StorageLocation): Promise<void> {
+  if (migrationInProgress) throw new Error("存储迁移正在进行中")
   if (setting.location === newLocation) return
+  migrationInProgress = true
 
   const oldLocation = setting.location
   const oldPath = setting.resolveBasePath(oldLocation)
 
-  // 1) close db
-  const wasOpen = database.isOpen()
-  if (wasOpen) database.close()
-
-  let migrated = false
   try {
+    // 1) close db
+    const wasOpen = database.isOpen()
+    if (wasOpen) database.close()
+
+    let migrated = false
+    try {
     // 2) copy + 切 location
     await setting.migrateTo(newLocation)
     migrated = true
@@ -45,9 +54,12 @@ export async function switchStorageLocation(newLocation: StorageLocation): Promi
     } catch (ee) {
       console.error("[switchStorageLocation] rollback reopen failed:", ee)
     }
-    throw e
-  }
+      throw e
+    }
 
-  // 5) 最佳努力清理旧目录
-  await setting.cleanupPath(oldPath)
+    // 5) 最佳努力清理旧目录
+    await setting.cleanupPath(oldPath)
+  } finally {
+    migrationInProgress = false
+  }
 }

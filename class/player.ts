@@ -2,6 +2,7 @@ import { Widget } from "scripting"
 import { database, Music } from "./database"
 import { fileManager } from "./file_manager"
 import { sleepTimerManager } from "./sleep_timer"
+import { AsyncInitializer } from "./async_initializer"
 
 type PlayMode = "sequential" | "shuffle" | "repeat-one" | "repeat-all"
 type PlayerState = "idle" | "loading" | "playing" | "paused" | "error"
@@ -28,7 +29,7 @@ class Player {
   private progressTimer: number | null = null
   private isTimerRunning: boolean = false
   private hasCountedPlay: boolean = false
-  private initialized: boolean = false
+  private initializer = new AsyncInitializer()
   // 切歌竞态令牌：playMusic 进入自增，每个 await 后校验，丢弃过期解析。
   private playToken: number = 0
   // shuffle 历史栈：记已播 index 访问序，previous 回退、next 优先 redo。
@@ -40,15 +41,15 @@ class Player {
   private static readonly STORAGE_MUSIC_KEY = "player_current_music"
   private static readonly STORAGE_PLAY_MODE_KEY = "player_play_mode"
 
-  async init(): Promise<void> {
-    if (this.initialized) return
-    this.initialized = true
-    await fileManager.init()
-    await database.init()
+  init(): Promise<void> {
+    return this.initializer.run(async () => {
+      try {
+        await fileManager.init()
+        await database.init()
 
-    this.player = new AVPlayer()
+        this.player = new AVPlayer()
 
-    this.player.onReadyToPlay = () => {
+        this.player.onReadyToPlay = () => {
       console.log(`[Player] 音频准备完成，开始播放`, this.player?.duration)
       this.setState("playing")
       this.player?.play()
@@ -75,10 +76,17 @@ class Player {
     SharedAudioSession.setCategory("playback", ["allowBluetoothA2DP", "allowAirPlay"])
     SharedAudioSession.setActive(true)
 
-    this.setupInterruptionHandling()
-    this.setupMediaPlayerCommands()
-    sleepTimerManager.setTriggerCallback(() => this.pause())
-    this.restoreSession()
+        this.setupInterruptionHandling()
+        this.setupMediaPlayerCommands()
+        sleepTimerManager.setTriggerCallback(() => this.pause())
+        this.restoreSession()
+      } catch (error) {
+        this.player?.dispose()
+        this.player = null
+        this.state = "idle"
+        throw error
+      }
+    })
   }
 
   private restoreSession(): void {
@@ -262,6 +270,8 @@ class Player {
     this.queue = []
     this.currentIndex = -1
     this.listeners = []
+    this.state = "idle"
+    this.initializer.reset()
     MediaPlayer.nowPlayingInfo = null
   }
 

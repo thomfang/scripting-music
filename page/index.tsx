@@ -11,11 +11,8 @@ import {
   useObservable,
   VStack,
 } from "scripting"
-import { LibraryView } from "./library"
 import { PlayerView } from "./player"
-import { SearchView } from "./search"
-import { SettingView } from "./setting"
-import { DiscoverView } from "./discover"
+import { MainSectionContent } from "./main_section_content"
 import { PlayerStateProvider } from "../class/player_state"
 import { MiniPlayer } from "./components/mini_player"
 
@@ -30,10 +27,7 @@ function MiniPlayerProvider({ children }: { children: JSX.Element }) {
 function MiniPlayerAccessory() {
   const isPresented = useContext(MiniPlayerContext)
   return (
-    <MiniPlayer
-      contentShape={"rect"}
-      onTapGesture={() => isPresented.setValue(true)}
-    />
+    <MiniPlayer onOpenPlayer={() => isPresented.setValue(true)} />
   )
 }
 
@@ -79,7 +73,8 @@ function MainView() {
       }}>
       <Tab title="资料库" systemImage="music.note.square.stack" value={1}>
         <NavigationStack>
-          <LibraryView
+          <MainSectionContent
+            section="library"
             navigationTitle={"资料库"}
             toolbar={{
               topBarLeading: [<Button title="退出" systemImage="xmark" action={dismiss} />],
@@ -90,7 +85,8 @@ function MainView() {
 
       <Tab title="发现" systemImage="sparkles" value={2}>
         <NavigationStack>
-          <DiscoverView
+          <MainSectionContent
+            section="discover"
             navigationTitle={"发现"}
             toolbar={{
               topBarLeading: [<Button title="退出" systemImage="xmark" action={dismiss} />],
@@ -101,7 +97,8 @@ function MainView() {
 
       <Tab title="设置" systemImage="gear" value={3}>
         <NavigationStack>
-          <SettingView
+          <MainSectionContent
+            section="settings"
             navigationTitle={"设置"}
             toolbar={{
               topBarLeading: [<Button title="退出" systemImage="xmark" action={dismiss} />],
@@ -112,7 +109,8 @@ function MainView() {
 
       <Tab title="搜索" systemImage="magnifyingglass" role="search" value={0}>
         <NavigationStack>
-          <SearchView
+          <MainSectionContent
+            section="search"
             navigationTitle={"搜索"}
             toolbar={{
               topBarLeading: [<Button title="退出" systemImage="xmark" action={dismiss} />],

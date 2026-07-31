@@ -1,6 +1,8 @@
 import { fetchDownloader } from "./fetch_downloader"
 import { database } from "./database"
 import { fileManager } from "./file_manager"
+import { AsyncInitializer } from "./async_initializer"
+import { DownloadSnapshot, getDownloadSnapshotInfo, putDownloadSnapshot, removeDownloadSnapshot } from "./download_snapshot"
 
 /**
  * 全局下载中心（模块级单例）。
@@ -49,6 +51,7 @@ export type DownloadCenterItem = {
 type Awaiter = { resolve: () => void; reject: (e: any) => void }
 
 class DownloadCenter {
+  private static readonly SNAPSHOT_KEY = "download_center_recovery_snapshot"
   private items = new Map<string, DownloadCenterItem>()
   private order: string[] = []
   private queue: string[] = []
@@ -57,7 +60,24 @@ class DownloadCenter {
   private subscribers = new Set<() => void>()
   private completionSubscribers = new Set<(musicId: string) => void>()
   private awaiters = new Map<string, Awaiter[]>()
+  private initializer = new AsyncInitializer()
   private unsubProgress = new Map<string, () => void>()
+
+  private readSnapshot(): DownloadSnapshot {
+    return Storage.get<DownloadSnapshot>(DownloadCenter.SNAPSHOT_KEY) ?? {}
+  }
+
+  private saveSnapshot(snapshot: DownloadSnapshot): void {
+    Storage.set(DownloadCenter.SNAPSHOT_KEY, snapshot)
+  }
+
+  private remember(info: DownloadInfo): void {
+    this.saveSnapshot(putDownloadSnapshot(this.readSnapshot(), info))
+  }
+
+  private forget(id: string): void {
+    this.saveSnapshot(removeDownloadSnapshot(this.readSnapshot(), id))
+  }
 
   /** 登记一个等待者（多个调用方可共享同一 terminal）。 */
   private addAwaiter(id: string): Promise<void> {
@@ -125,43 +145,60 @@ class DownloadCenter {
 
   // ===== 启动对账 =====
 
-  async init(): Promise<void> {
-    try {
+  init(): Promise<void> {
+    return this.initializer.run(async () => {
+      const restoredItems = new Map<string, DownloadCenterItem>()
+      const restoredOrder: string[] = []
       const tasks = await database.getAllDownloadTasks()
+      const snapshot = this.readSnapshot()
+      const recoverableTaskIds = new Set<string>()
       for (const t of tasks) {
         if (t.status !== "downloading" && t.status !== "pending" && t.status !== "paused") continue
         const music = await database.getMusic(t.music_id).catch(() => null)
-        if (!music || music.is_downloaded) continue
+        if (music?.is_downloaded) {
+          this.forget(t.music_id)
+          continue
+        }
+        const savedInfo = getDownloadSnapshotInfo(snapshot, t.music_id)
+        const info: DownloadInfo | null = music ? {
+          id: music.id,
+          provider: music.provider ?? "mp3juice",
+          title: music.title,
+          artist: music.artist,
+          album: music.album,
+          duration: music.duration,
+          cover: music.cover_url ?? "",
+          source_id: music.source_id ?? music.id,
+        } : savedInfo
+        if (!info) continue
+        recoverableTaskIds.add(t.music_id)
         // 上次会话被杀，内存 task 已丢；标记为 paused（可重试/续传），DB 里 downloading 顺手改 paused。
         if (t.status === "downloading" || t.status === "pending") {
           try { await database.updateDownloadTask(t.id, "paused", t.progress) } catch {}
         }
         const item: DownloadCenterItem = {
-          musicId: music.id,
-          info: {
-            id: music.id,
-            provider: music.provider ?? "mp3juice",
-            title: music.title,
-            artist: music.artist,
-            album: music.album,
-            duration: music.duration,
-            cover: music.cover_url ?? "",
-            source_id: music.source_id ?? music.id,
-          },
+          musicId: info.id,
+          info,
           progress: (t.progress ?? 0) / 100,
           status: "paused",
         }
-        this.items.set(item.musicId, item)
-        this.order.push(item.musicId)
+        restoredItems.set(item.musicId, item)
+        if (!restoredOrder.includes(item.musicId)) restoredOrder.push(item.musicId)
       }
-      if (this.items.size > 0) this.notify()
-      console.log(`[下载中心] 对账完成，恢复 ${this.items.size} 个中断任务`)
+
+      // 只在完整对账成功后一次性提交，失败不会污染现有内存快照。
+      for (const id of restoredOrder) {
+        if (!this.items.has(id)) this.order.push(id)
+        this.items.set(id, restoredItems.get(id)!)
+      }
+      if (restoredItems.size > 0) this.notify()
+      console.log(`[下载中心] 对账完成，恢复 ${restoredItems.size} 个中断任务`)
 
       // 清理孤儿 part：磁盘上有 .part 但无对应恢复 item（上次被杀后用户不再续）。
       try {
         const partIds = await fileManager.listPartIds()
         for (const pid of partIds) {
-          if (!this.items.has(pid)) {
+          if (!recoverableTaskIds.has(pid) && !this.items.has(pid)) {
             await fileManager.deletePart(pid).catch(() => {})
             console.log(`[下载中心] 清理孤儿 part: ${pid}`)
           }
@@ -169,9 +206,7 @@ class DownloadCenter {
       } catch (e) {
         console.error("[下载中心] 清理孤儿 part 失败:", e)
       }
-    } catch (e) {
-      console.error("[下载中心] 对账失败:", e)
-    }
+    })
   }
 
   // ===== 入队 / 调度 =====
@@ -192,6 +227,7 @@ class DownloadCenter {
       // failed/cancelled → 重新入队
     }
 
+    this.remember(info)
     const item: DownloadCenterItem = {
       musicId: info.id,
       info,
@@ -287,6 +323,7 @@ class DownloadCenter {
     this.pump()
     // 完成项 5s 后自动移除（避免新下载时还看到旧的已完成）。
     const it = this.items.get(id)
+    if (it && (it.status === "completed" || it.status === "cancelled")) this.forget(id)
     if (it && it.status === "completed") {
       // 通知「有新歌入库」——供资料库首页静默刷新（cancelled 走 settle(ok=true)
       // 但 status 是 "cancelled"，被此分支挡掉，不会误触发）。
@@ -386,6 +423,7 @@ class DownloadCenter {
     const unsub = this.unsubProgress.get(id)
     if (unsub) { unsub(); this.unsubProgress.delete(id) }
     this.settleAwaiters(id, true)
+    this.forget(id)
     this.items.delete(id)
     this.order = this.order.filter(x => x !== id)
     this.notify()
@@ -407,6 +445,8 @@ class DownloadCenter {
     const it = this.items.get(id)
     if (!it) return
     if (it.status === "downloading" || it.status === "queued") return // 活跃的不移除
+    this.forget(id)
+    database.getDownloadTaskByMusicId(id).then(task => task ? database.deleteDownloadTask(task.id) : undefined).catch(() => {})
     this.items.delete(id)
     this.order = this.order.filter(x => x !== id)
     this.queue = this.queue.filter(x => x !== id)
@@ -417,6 +457,8 @@ class DownloadCenter {
     for (const id of [...this.order]) {
       const it = this.items.get(id)
       if (it && (it.status === "completed" || it.status === "cancelled" || it.status === "failed")) {
+        this.forget(id)
+        database.getDownloadTaskByMusicId(id).then(task => task ? database.deleteDownloadTask(task.id) : undefined).catch(() => {})
         this.items.delete(id)
       }
     }
