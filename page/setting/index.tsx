@@ -1,21 +1,20 @@
-import { Button, List, NavigationStack, Text, Section, useState, useEffect, HStack, Spacer, VStack, Toggle, NavigationLink, Script } from "scripting"
+import { Button, List, Text, Section, useState, useEffect, HStack, Spacer, VStack, Toggle, NavigationLink, Script } from "scripting"
 import { AboutPage } from "./about"
 import { setting, StorageLocation } from "../../class/setting"
 import { switchStorageLocation } from "../../class/storage_migration"
 import { database } from "../../class/database"
 import { fileManager } from "../../class/file_manager"
 import { sleepTimerManager } from "../../class/sleep_timer"
+import { player } from "../../class/player"
+import { downloadCenter } from "../../class/download_center"
 import { SleepTimerPage } from "./sleep_timer"
 import { safeRun } from "../../class/safe_run"
 
 export function SettingView() {
-  return (
-    <NavigationStack><StackView navigationTitle={"设置"} />
-    </NavigationStack>
-  )
+  return <SettingContent />
 }
 
-function StackView() {
+export function SettingContent() {
   const [storageInfo, setStorageInfo] = useState<{ totalSize: number, musicCount: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [useICloud, setUseICloud] = useState(setting.location === "iCloud")
@@ -35,6 +34,11 @@ function StackView() {
   }
 
   async function handleStorageLocationChange(value: boolean) {
+    if (migrating) return
+    if (downloadCenter.activeCount() > 0) {
+      await Dialog.alert({ title: "暂时无法迁移", message: "请先暂停或取消所有下载任务，再切换存储位置。" })
+      return
+    }
     const newLocation: StorageLocation = value ? "iCloud" : "appGroup"
     const locationName = value ? "iCloud" : "App 本地"
 
@@ -47,8 +51,11 @@ function StackView() {
 
     if (!confirmed) return
 
+    const currentMusic = player.getCurrentMusic()
+    const wasPlaying = player.getState() === "playing"
     setMigrating(true)
     try {
+      if (wasPlaying) await player.pause()
       await switchStorageLocation(newLocation)
       setUseICloud(value)
       await loadStorageInfo()
@@ -57,6 +64,7 @@ function StackView() {
       console.error("切换存储位置失败:", error)
       await Dialog.alert({ title: "失败", message: `切换失败，已回滚到原位置。\n\n${error}` })
     } finally {
+      if (wasPlaying && currentMusic) await player.play(currentMusic)
       setMigrating(false)
     }
   }
@@ -83,7 +91,8 @@ function StackView() {
         footer={<Text>{"iCloud 可在多设备间同步，本地存储更快速"}</Text>}>
         <Toggle
           value={useICloud}
-          onChanged={handleStorageLocationChange}>
+          onChanged={handleStorageLocationChange}
+          disabled={migrating}>
           <VStack alignment="leading" spacing={2}>
             <Text>{"保存到 iCloud"}</Text>
             <Text font="caption" foregroundStyle="secondaryLabel">

@@ -2,7 +2,7 @@ import { HStack, VStack, Text, Image } from "scripting"
 import { usePlayerState } from "../../class/player_state"
 import { useResolvedCover } from "../player/use_cover"
 
-export function PlayerInfo() {
+export function PlayerInfo({ coverCornerRadius = 6 }: { coverCornerRadius?: number } = {}) {
   const { currentMusic } = usePlayerState()
   const { localImage, remoteUrl } = useResolvedCover(currentMusic)
 
@@ -30,7 +30,7 @@ export function PlayerInfo() {
         image={localImage}
         resizable={true}
         frame={{ width: 40, height: 40 }}
-        clipShape={{ type: "rect", cornerRadius: 6 }}
+        clipShape={{ type: "rect", cornerRadius: coverCornerRadius }}
       />
     )
   } else if (remoteUrl) {
@@ -40,7 +40,7 @@ export function PlayerInfo() {
         imageUrl={remoteUrl}
         resizable={true}
         frame={{ width: 40, height: 40 }}
-        clipShape={{ type: "rect", cornerRadius: 6 }}
+        clipShape={{ type: "rect", cornerRadius: coverCornerRadius }}
         placeholder={placeholder}
       />
     )

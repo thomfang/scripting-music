@@ -1,8 +1,7 @@
 import { Navigation, Script } from "scripting"
 import { HomePage } from "./page/index"
 import { player } from "./class/player"
-import { downloadManager } from "./class/download_manager"
-import { downloadCenter } from "./class/download_center"
+import { initializeAppRuntime } from "./class/app_runtime"
 
 async function main() {
   try {
@@ -12,9 +11,7 @@ async function main() {
 
     Script.enableMinimize()
 
-    await player.init()
-    await downloadManager.init()
-    await downloadCenter.init()
+    await initializeAppRuntime()
     await Navigation.present({
       element: <HomePage />,
       modalPresentationStyle: "overFullScreen"

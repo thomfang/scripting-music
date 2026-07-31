@@ -1,6 +1,6 @@
 import { AppIntentManager, AppIntentProtocol, Navigation, Notification, Script, Widget } from "scripting"
 import { player } from "./class/player"
-import { downloadManager } from "./class/download_manager"
+import { initializeCoreRuntime } from "./class/app_runtime"
 import { HomePage } from "./page"
 
 let presented = false
@@ -13,8 +13,7 @@ Script.onResume(async () => {
   presented = true
 
   try {
-    await player.init()
-    await downloadManager.init()
+    await initializeCoreRuntime()
     await Navigation.present({
       element: <HomePage />,
       modalPresentationStyle: "overFullScreen"
@@ -38,7 +37,7 @@ export const TogglePlaybackIntent = AppIntentManager.register({
         title: "No PRO Access"
       })
     }
-    await player.init()
+    await initializeCoreRuntime()
     if (player.getState() === "playing") {
       await player.pause()
     } else {
@@ -52,7 +51,7 @@ export const PreviousTrackIntent = AppIntentManager.register({
   name: "PreviousTrackIntent",
   protocol: AppIntentProtocol.AudioPlaybackIntent,
   perform: async (_params: undefined) => {
-    await player.init()
+    await initializeCoreRuntime()
     await player.previous()
     Widget.reloadUserWidgets()
   }
@@ -62,7 +61,7 @@ export const NextTrackIntent = AppIntentManager.register({
   name: "NextTrackIntent",
   protocol: AppIntentProtocol.AudioPlaybackIntent,
   perform: async (_params: undefined) => {
-    await player.init()
+    await initializeCoreRuntime()
     await player.next()
     Widget.reloadUserWidgets()
   }

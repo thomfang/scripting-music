@@ -2,26 +2,8 @@ import {
   Button, HStack, Image, List, Navigation, NavigationStack, ScrollView,
   Section, Spacer, Text, VStack, useState, Script
 } from "scripting"
-import { runSuite, SuiteResult, TestSuite } from "./test_runner"
-
-// 在这里登记所有 suite
-import { suite as settingMigrationSuite } from "./test_setting_migration"
-import { suite as databaseUpsertSuite } from "./test_database_upsert"
-import { suite as idSuite } from "./test_id"
-import { suite as safeRunSuite } from "./test_safe_run"
-import { suite as playlistShareSuite } from "./test_playlist_share"
-import { suite as lruCacheSuite } from "./test_lru_cache"
-import { suite as playlistIntegritySuite } from "./test_playlist_integrity"
-
-const ALL_SUITES: TestSuite[] = [
-  settingMigrationSuite,
-  databaseUpsertSuite,
-  idSuite,
-  safeRunSuite,
-  playlistShareSuite,
-  lruCacheSuite,
-  playlistIntegritySuite,
-]
+import { runSuite, SuiteResult } from "./test_runner"
+import { ALL_SUITES } from "./all_suites"
 
 function statusIcon(passed: boolean) {
   return (
