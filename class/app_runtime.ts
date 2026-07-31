@@ -5,6 +5,8 @@ import { downloadCenter } from "./download_center"
 /** 初始化所有界面和 Intent 共用的播放器/文件/数据库运行时。 */
 export async function initializeCoreRuntime(): Promise<void> {
   await player.init()
+  // MediaPlayer command handler 绑定当前宿主上下文；即使核心资源已初始化也要重新激活。
+  player.activateMediaPlayerCommands()
   await downloadManager.init()
 }
 

@@ -3,6 +3,7 @@ import { database, Music } from "./database"
 import { fileManager } from "./file_manager"
 import { sleepTimerManager } from "./sleep_timer"
 import { AsyncInitializer } from "./async_initializer"
+import { dispatchMediaPlayerCommand } from "./media_player_commands"
 
 type PlayMode = "sequential" | "shuffle" | "repeat-one" | "repeat-all"
 type PlayerState = "idle" | "loading" | "playing" | "paused" | "error"
@@ -77,7 +78,6 @@ class Player {
     SharedAudioSession.setActive(true)
 
         this.setupInterruptionHandling()
-        this.setupMediaPlayerCommands()
         sleepTimerManager.setTriggerCallback(() => this.pause())
         this.restoreSession()
       } catch (error) {
@@ -112,6 +112,8 @@ class Player {
   }
 
   async play(music?: Music): Promise<void> {
+    // Remote Command 注册属于当前宿主上下文，不是永久资源；播放前防御性刷新。
+    this.activateMediaPlayerCommands()
     if (music) {
       console.log(`[Player] 开始播放: ${music.title}`)
       await this.playMusic(music)
@@ -602,20 +604,25 @@ class Player {
     })
   }
 
-  private setupMediaPlayerCommands(): void {
+  /**
+   * 为当前脚本/Home 宿主上下文激活 Now Playing Center 命令。
+   * 该注册是易失且可被宿主重建清除，因此必须允许在每次入口激活时幂等重放，
+   * 不能只放在 AsyncInitializer 的一次性任务中。
+   */
+  activateMediaPlayerCommands(): void {
     MediaPlayer.setAvailableCommands([
       "togglePausePlay", "nextTrack", "previousTrack", "seekForward", "play", "pause", "seekBackward"
     ])
 
     MediaPlayer.commandHandler = (command: MediaPlayerRemoteCommand) => {
-      switch (command) {
-        case "play": this.play(); break
-        case "pause": this.pause(); break
-        case "nextTrack": this.next(); break
-        case "previousTrack": this.previous(); break
-        case "seekForward": this.seek(this.getCurrentTime() + 15); break
-        case "seekBackward": this.seek(this.getCurrentTime() - 15); break
-      }
+      dispatchMediaPlayerCommand(command, {
+        isPlaying: () => this.state === "playing",
+        play: () => { void this.play() },
+        pause: () => { void this.pause() },
+        next: () => { void this.next() },
+        previous: () => { void this.previous() },
+        seekBy: seconds => this.seek(this.getCurrentTime() + seconds),
+      })
     }
   }
 

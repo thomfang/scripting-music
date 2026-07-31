@@ -29,7 +29,8 @@ type SearchMode = "online" | "artist" | "album" | "local"
 const searchCache = new LRUCache<string, CacheEntry>(50)
 const CACHE_DURATION = 5 * 60 * 1000
 
-export function SearchView() {
+export function SearchView({ searchableEnabled = true }: { searchableEnabled?: boolean } = {}) {
+  const [searchPresented, setSearchPresented] = useState(false)
   const [inputValue, setInputValue] = useState("")
   const [query, setQuery] = useState("")
   const [mode, setMode] = useState<SearchMode>("online")
@@ -46,6 +47,10 @@ export function SearchView() {
   const playerState = usePlayerState()
 
   const history = useMemo(() => getHistory(), [historyVersion])
+
+  useEffect(() => {
+    if (!searchableEnabled) setSearchPresented(false)
+  }, [searchableEnabled])
 
   useEffect(() => {
     const trimmed = inputValue.trim()
@@ -215,27 +220,31 @@ export function SearchView() {
         onChanged: (v: boolean) => { if (!v) dismissPlaylistPicker() },
         content: <PlaylistPickerContent onSelect={addToPlaylist} onDismiss={dismissPlaylistPicker} />
       }}
-      searchable={{
+      searchable={searchableEnabled ? {
         value: inputValue,
         onChanged: setInputValue,
         placement: "navigationBarDrawer",
+        presented: {
+          value: searchPresented,
+          onChanged: setSearchPresented,
+        },
         prompt: mode === "online" ? "搜索歌曲（在线）"
           : mode === "artist" ? "搜索艺人（在线）"
           : mode === "album" ? "搜索专辑（在线）"
           : "搜索本地歌曲"
-      }}
-      searchSuggestions={
+      } : undefined}
+      searchSuggestions={searchableEnabled ? (
         <>
           {!inputValue.trim() && history.map((h, i) => (
             <Text key={i} searchCompletion={h}>{`🕐 ${h}`}</Text>
           ))}
         </>
-      }
-      onSubmit={{
+      ) : undefined}
+      onSubmit={searchableEnabled ? {
         triggers: "search",
         action: () => doSearch(inputValue)
-      }}
-      submitLabel="search">
+      } : undefined}
+      submitLabel={searchableEnabled ? "search" : undefined}>
       <Section>
         <Picker
                   label={<Text>搜索模式</Text>}

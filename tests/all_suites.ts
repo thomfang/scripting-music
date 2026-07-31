@@ -11,6 +11,7 @@ import { suite as playlistIntegritySuite } from "./test_playlist_integrity"
 import { suite as asyncInitializerSuite } from "./test_async_initializer"
 import { suite as homeScreenModelSuite } from "./test_home_screen_model"
 import { suite as downloadSnapshotSuite } from "./test_download_snapshot"
+import { suite as mediaPlayerCommandsSuite } from "./test_media_player_commands"
 
 export const ALL_SUITES: TestSuite[] = [
   settingMigrationSuite,
@@ -24,4 +25,5 @@ export const ALL_SUITES: TestSuite[] = [
   asyncInitializerSuite,
   homeScreenModelSuite,
   downloadSnapshotSuite,
+  mediaPlayerCommandsSuite,
 ]

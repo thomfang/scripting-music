@@ -39,7 +39,7 @@ function CachedSection({
   switch (section) {
     case "library": return <LibraryView {...commonProps} showsToolbarActions={showsLibraryToolbarActions} />
     case "discover": return <DiscoverView {...commonProps} />
-    case "search": return <SearchView {...commonProps} />
+    case "search": return <SearchView {...commonProps} searchableEnabled={active} />
     case "settings": return <SettingContent {...commonProps} />
   }
 }

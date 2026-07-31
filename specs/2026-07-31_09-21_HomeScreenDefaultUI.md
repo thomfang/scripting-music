@@ -59,6 +59,9 @@
 - 切换 section 时不得向 NavigationStack 不断 push 页面，避免形成“资料库→发现→搜索”的伪历史栈；应切换根内容并在切换前回到该 section 的根层级。
 - Home section 页面采用懒加载常驻缓存：首次访问才创建，之后四个页面实例都保留在同一个 ZStack；非当前页面使用 `opacity=0`、`allowsHitTesting=false`、`accessibilityHidden=true`，切换时不再卸载，因此保留滚动位置、搜索输入和页面局部 UI state。
 - 缓存页面各自持有实际根视图上的 bottom safeAreaInset；活动页显示真实 MiniPlayer，非活动页使用同高透明占位，避免隐藏页面重复渲染播放器并保持布局几何一致。
+- 缓存页面的导航环境 modifier 必须跟随活动状态：SearchView 仅在搜索 section 活动时注入 `searchable`、suggestions 和 search submit；离开时显式关闭 presented 状态并移除相关 modifier，避免透明但仍挂载的搜索页把 Search Bar 泄漏到其他 section。
+- `initializeCoreRuntime()` 在核心资源初始化后始终重新激活 `MediaPlayer` commands。Now Playing Center handler 属于当前脚本/Home 宿主上下文的易失注册，不受 `AsyncInitializer` 一次性幂等保护；播放前也会防御性重注册。
+- Remote Command 覆盖 play / pause / togglePausePlay / next / previous / 前后 15 秒 seek；分发逻辑抽为纯函数并纳入共用测试套件。
 
 ### MiniPlayer
 - `safeAreaInset.bottom` 直接挂在 `MainSectionContent` 上；Scripting 会把 view props 应用到函数组件返回的实际根视图，因此最终 inset 落在 Library/Discover/Search/Setting 的根 List/ScrollView，而不是依赖 ZStack 或 NavigationStack 跨容器传播。
@@ -164,7 +167,7 @@ HomeScreenDefaultExport mount
 ## Validation
 - Self-check: 已逐项对照官方 `Home Screen UI` 文档；Home 入口只 default-export 组件，不调用 `Navigation.present` / `Script.exit`。Home Shell 复用现有四个主页面、PlayerStateProvider、MiniPlayer、PlayerView 和共享运行时模块。
 - Static checks: 整个 `Scripting Music` 项目 TypeScript diagnostics 0 项。
-- Runtime / Test: `scripting-ts preview_ui home_screen_default_ui.tsx --screenshot` 成功；完整测试 11 suites / 80 cases 全部通过。顶部统一 Glass Tab Bar、常驻 trailing Menu、页面懒加载缓存及状态保留已通过 Home Tab 真机测试。
+- Runtime / Test: `scripting-ts preview_ui home_screen_default_ui.tsx --screenshot` 成功；完整测试 12 suites / 83 cases 全部通过。顶部统一 Glass Tab Bar、常驻 trailing Menu、页面懒加载缓存、条件 searchable、Now Playing Center commands 及状态保留均已通过 Home Tab 真机测试。
 - Human confirmation: 2026-07-31 用户明确批准统一 Toolbar Home Shell、safeAreaInset MiniPlayer、现存问题修复、单测覆盖与 Git 版本管理；真机 Home Tab 的宿主菜单拥挤度与长驻交互仍需用户体验反馈。
 - 结果汇总：代码实现、自动化测试、项目诊断和 Preview 均通过；已完成两轮独立对抗性 review，并修复全局 MiniPlayer 壳层、下载重试卸载、未入库下载恢复、存储迁移互斥及 Glass 容器误导性参数等问题。
 - 核心目标是否已由证据证明完成：自动化与 Preview 范围内已完成；Home Tab 停止实例及不同字号/窄屏 Toolbar 仍需真机人工确认。
@@ -183,6 +186,8 @@ HomeScreenDefaultExport mount
 - 2026-07-31: segmented Picker 真机切换时出现 Toolbar 动画晃动，推断来自系统选中滑块动画与 section 导致的 principal 重排；因此改为固定尺寸自定义按钮组。
 - 2026-07-31: 用户修正视觉要求：不是四个独立 glass Button，也不使用 GlassEffectContainer；改为整个固定尺寸 HStack 共用一个圆角矩形背景与 glassEffect，内部四个按钮使用 plain。
 - 2026-07-31: 用户发现自定义顶部导航切换时页面会销毁重建。新增 visitedSections 懒加载集合与 CachedMainSectionContent，访问过的四个页面保持挂载，仅切换可见性/交互；新增访问去重单测。顶部 Tab Bar 同步放大至 204pt，并增加按钮尺寸与间距。真机测试通过。
+- 2026-07-31: 真机发现搜索页缓存后，切到其他 section 仍残留 Search Bar。根因是 `opacity=0` 不会注销 searchable 的 NavigationStack 环境配置；SearchView 新增 searchableEnabled/presented 控制，非活动时移除 searchable、suggestions、submit 并显式 dismiss，同时保留页面状态。真机复测通过。
+- 2026-07-31: 真机发现 Home Screen 播放时 Now Playing Center command 不可用。根因是 command 注册被放入 Player 的一次性 AsyncInitializer；宿主上下文重建后 `player.init()` 因 ready 直接返回，不会恢复易失 handler。现从一次性初始化解耦，initializeCoreRuntime 和 play 都幂等重注册，并补齐此前声明但未处理的 togglePausePlay。真机复测通过。
 
 ## Resume / Handoff
 - 当前状态：Glass MiniPlayer 样式迭代、自动验证和截图预览完成，待 Home Tab 真机最终间距确认。
