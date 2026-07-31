@@ -5,7 +5,7 @@
 ## 功能特性
 
 ### 🎵 播放
-- 全功能音频播放器，支持顺序 / 随机 / 单曲循环
+- 全功能音频播放器，支持顺序 / 随机 / 单曲循环 / 列表循环
 - 锁屏 / 控制中心 Now Playing 信息与封面同步
 - 歌词同步显示（本地 LRC + 在线 LRCLIB 兜底，自动落盘缓存）
 - 待播队列管理（拖拽排序、移除、播放模式切换）
@@ -41,36 +41,64 @@
 - 下载完成自动写入 ID3 标签、封面、歌词
 - 播放时自动为缺少封面的已下载歌曲补抓封面（fire-and-forget）
 
+### 🏠 Scripting Home Screen
+- 提供 `home_screen_default_ui.tsx` 官方 Home Tab 入口，无需启动独立脚本窗口
+- 资料库 / 发现 / 搜索 / 设置共用顶部 Liquid Glass 导航和底部 MiniPlayer
+- 已访问页面懒加载后保持挂载，切换时保留滚动位置、搜索内容和局部 UI 状态
+- 下载中心与播放全部 / 随机播放整合到常驻 Toolbar Menu
+- iOS 26 使用 Liquid Glass；旧系统自动使用普通圆角背景降级
+
 ## 技术架构
 
+项目同时提供普通脚本、Scripting Home Screen、小组件和 App Intent 四类入口，共用播放器、数据库、文件管理与下载运行时：
+
+```text
+index.tsx ───────────────────────┐
+home_screen_default_ui.tsx ─────┼─> class/app_runtime.ts
+app_intents.tsx ─────────────────┘       ├─ Player / AVPlayer
+                                        ├─ SQLite / MusicFileManager
+                                        └─ DownloadCenter / FetchDownloader
+widget.tsx <──── Storage("now_playing") <─ Player
 ```
+
+- `initializeCoreRuntime()` 初始化播放器、文件目录和 SQLite；由普通 UI、Home Screen 和 App Intent 共享。
+- `initializeDownloadRuntime()` 单独恢复下载任务；Home Screen 中恢复失败会降级为可重试 warning，不阻断资料库使用。
+- `AsyncInitializer` 让并发初始化共享同一 Promise，成功后幂等，失败后允许重试。
+- `DownloadCenter` 是模块级单例，维护并发上限为 3 的队列、响应式订阅、数据库任务和跨会话 recovery snapshot。
+- 普通入口使用 `Navigation.present()`；Home Screen 由宿主长期挂载，使用单一 `NavigationStack`，不调用 `Navigation.present()` 或 `Script.exit()`。
+
+```text
 Scripting Music/
-├── index.tsx              # 入口，TabView（资料库 / 发现 / 搜索 / 设置）
-├── widget.tsx             # 主屏幕小组件（当前播放）
-├── app_intents.tsx        # Shortcuts App Intent
+├── index.tsx                      # 普通脚本入口：初始化后呈现四 Tab App
+├── home_screen_default_ui.tsx     # Scripting Home Tab 官方入口
+├── widget.tsx                     # 小 / 中 / 大号当前播放小组件入口
+├── app_intents.tsx                # 播放/暂停、上一首、下一首 App Intent
 ├── class/
-│   ├── player.ts          # 播放器核心（playToken 竞态、shuffle 历史栈、封面补抓）
-│   ├── database.ts        # SQLite 数据库（music / playlist / download_task 表）
-│   ├── download_center.ts # 全局下载中心单例（并发队列 + 订阅 + 启动对账）
-│   ├── fetch_downloader.ts# 真实下载引擎（断点续传 + ID3 + 封面 + 歌词）
-│   ├── file_manager.ts    # 音频 / 封面 / 歌词 / part 文件管理
-│   ├── music.ts           # 音源入口（搜索 / 解析音频 URL / 解析视频 URL）
-│   └── sources/
-│       ├── source_mp3juice.ts  # MP3Juice 音源（YouTube → savetube CDN → AES-CBC 解密）
-│       ├── itunes_meta.ts      # iTunes 搜索结果富化（批量并发 + 置信度护栏）
-│       ├── itunes_browse.ts    # iTunes 艺人 / 专辑在线浏览
-│       ├── resolve_real.ts     # 在线曲目解析真实 mp3juice 源（按评分选最佳）
-│       ├── match_utils.ts      # 候选评分（标题 / 艺人 / 变体惩罚）
-│       ├── artist_info.ts      # TheAudioDB 艺人信息（头像 / banner / 简介）
-│       └── album_info.ts       # TheAudioDB 专辑信息（封面 / 简介）
+│   ├── app_runtime.ts             # 普通 UI / Home / Intent 共用初始化编排
+│   ├── async_initializer.ts       # 并发共享、失败可重试的初始化状态机
+│   ├── player.ts                  # AVPlayer、队列、播放模式、Now Playing、会话恢复
+│   ├── player_state.tsx           # 播放器状态订阅与 UI Provider
+│   ├── database.ts                # SQLite：歌曲、歌单、搜索历史、下载任务
+│   ├── setting.ts                 # appGroup / iCloud 存储位置选择
+│   ├── storage_migration.ts       # 存储迁移、数据库重开与失败回滚
+│   ├── file_manager.ts            # 音频、封面、歌词和 .part 文件管理
+│   ├── download_center.ts         # 全局并发队列、订阅、启动对账与恢复
+│   ├── download_snapshot.ts       # 未入库下载任务的跨会话恢复快照
+│   ├── fetch_downloader.ts        # Range 断点续传、ID3、封面和歌词写入
+│   ├── music.ts                   # 音源搜索及音频/视频 URL 解析入口
+│   └── sources/                   # MP3Juice、iTunes、TheAudioDB 与匹配逻辑
 ├── page/
-│   ├── library/           # 资料库页（首页 / 歌曲 / 艺人 / 专辑 / 播放列表 / 下载中心）
-│   ├── player/            # 播放页（封面 / 歌词 / 控制栏 / 队列 sheet）
-│   ├── discover/          # 发现页（榜单推荐 + 试听）
-│   ├── search/            # 搜索页（歌曲 / 艺人 / 专辑 + 在线详情）
-│   └── setting/           # 设置页（关于 / 存储 / 数据管理）
-├── specs/                 # 需求与设计 spec 文档（按日期命名）
-└── tests/                 # 单元测试
+│   ├── index.tsx                  # 普通四 Tab App Shell
+│   ├── main_section_content.tsx   # 普通 App / Home 共用主区域工厂与缓存容器
+│   ├── home_screen/               # Home Shell、Glass 导航、MiniPlayer 容器
+│   ├── library/                   # 资料库、歌单、歌曲/艺人/专辑、下载中心
+│   ├── player/                    # 播放页、歌词、控制栏、队列
+│   ├── discover/                  # 榜单推荐和试听
+│   ├── search/                    # 本地/在线搜索及艺人/专辑详情
+│   └── setting/                   # 存储切换、缓存管理和关于
+├── widget/                        # 小 / 中 / 大号小组件视图
+├── specs/                         # SDD 需求与设计文档
+└── tests/                         # CLI / UI runner 共用的单元测试套件
 ```
 
 ## 运行环境
@@ -94,14 +122,34 @@ Scripting Music/
 
 ## 数据存储
 
-所有数据存储在设备本地（App 沙盒 + iCloud Drive）：
+音乐数据默认保存在 **Scripting App Group Documents**，而不是脚本源码所在的 iCloud `scripts/Scripting Music` 目录。用户可以在「设置 → 存储位置」切换到 iCloud；迁移会复制完整数据目录、重开 SQLite，并在失败时回滚。
 
-| 类型 | 路径 |
-|------|------|
-| SQLite 数据库 | `<Scripting iCloud>/scripts/Scripting Music/db/music.db` |
-| 音频文件 | `<Scripting iCloud>/scripts/Scripting Music/audio/<id>.mp3` |
-| 封面图片 | `<Scripting iCloud>/scripts/Scripting Music/covers/<id>.jpg` |
-| 歌词文件 | `<Scripting iCloud>/scripts/Scripting Music/lyrics/<id>.json` |
+| 存储模式 | 基础目录 `<root>` |
+|---------|------------------|
+| 本地（默认） | `<Scripting App Group Documents>/Scripting Music` |
+| iCloud（可选） | `<Scripting iCloud Documents>/Scripting Music` |
+
+基础目录结构：
+
+| 类型 | 实际路径 |
+|------|---------|
+| SQLite 数据库 | `<root>/music.db`（运行时可能同时存在 `-wal` / `-shm`） |
+| 音频文件 | `<root>/audios/<id>.<format>`（支持 mp3 / m4a / ogg / flac / wav） |
+| 封面图片 | `<root>/covers/<id>.jpg` |
+| 歌词缓存 | `<root>/lyrics/<id>.json` |
+| 断点续传分片 | `<root>/downloads/<id>.part` |
+
+SQLite 当前包含 `music`、`playlist`、`playlist_music`、`search_history` 和 `download_task` 等表。播放队列、当前歌曲、播放模式、Home 当前 section、Now Playing 小组件数据和下载恢复 snapshot 使用 Scripting 的键值 `Storage` 保存，不位于上述文件目录中。
+
+切换存储位置时，应用会阻止活动下载或播放造成的数据竞争；迁移流程关闭数据库、复制整个基础目录、重新打开数据库并初始化目录，成功后再清理旧位置。
+
+## 测试
+
+测试 CLI 与 UI runner 共用 `tests/all_suites.ts`。当前覆盖存储迁移、数据库 upsert、歌单完整性与分享、资源匹配、异步初始化、Home Screen 模型和下载恢复 snapshot 等核心纯逻辑。
+
+```sh
+scripting-ts run tests/run_tests.ts
+```
 
 ## 许可证
 
