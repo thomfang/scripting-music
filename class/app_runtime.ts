@@ -1,6 +1,7 @@
 import { player } from "./player"
 import { downloadManager } from "./download_manager"
 import { downloadCenter } from "./download_center"
+import { initializeCloudUserDataFoundation } from "./cloud_user_data_runtime"
 
 /** 初始化所有界面和 Intent 共用的播放器/文件/数据库运行时。 */
 export async function initializeCoreRuntime(): Promise<void> {
@@ -19,4 +20,8 @@ export async function initializeDownloadRuntime(): Promise<void> {
 export async function initializeAppRuntime(): Promise<void> {
   await initializeCoreRuntime()
   await initializeDownloadRuntime()
+  // Phase 0/1：只读探测与本地 outbox 统计不阻塞首页/下载恢复；不创建云目录、不上传。
+  initializeCloudUserDataFoundation().catch(e => {
+    console.error("[cloud-user-data] foundation init failed:", e)
+  })
 }

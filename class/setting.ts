@@ -1,4 +1,5 @@
 import { Path } from "scripting"
+import { CLOUD_USER_DATA_DIRECTORY } from "./cloud_user_data_store"
 
 export type StorageLocation = "appGroup" | "iCloud"
 
@@ -40,11 +41,25 @@ class Setting {
     return newPath
   }
 
-  /** 清理旧路径（最佳努力），失败只打日志 */
+  /**
+   * 清理旧版 storage 根（最佳努力）。只接受两个明确的 legacy 根，且永不触碰
+   * 独立的 iCloud 用户数据根 `Scripting Music User Data`。
+   */
   async cleanupPath(path: string): Promise<void> {
+    const allowed = new Set<string>()
+    allowed.add(Path.normalize(this.resolveBasePath("appGroup")))
+    try { allowed.add(Path.normalize(this.resolveBasePath("iCloud"))) } catch {}
+    const normalized = Path.normalize(path)
+    // 新云根使用不同顶层目录；这里只防御调用方误把其路径作为 legacy cleanup 目标。
+    let protectedCloudRoot: string | null = null
+    try { protectedCloudRoot = Path.normalize(Path.join(FileManager.iCloudDocumentsDirectory, CLOUD_USER_DATA_DIRECTORY)) } catch {}
+    if (!allowed.has(normalized) || (protectedCloudRoot !== null && (normalized === protectedCloudRoot || protectedCloudRoot.startsWith(normalized + "/")))) {
+      console.error(`[setting] refused unsafe cleanup path: ${path}`)
+      return
+    }
     try {
-      if (await FileManager.exists(path)) {
-        await FileManager.remove(path)
+      if (await FileManager.exists(normalized)) {
+        await FileManager.remove(normalized)
       }
     } catch (e) {
       console.error("[setting] cleanup path failed:", e)

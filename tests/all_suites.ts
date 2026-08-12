@@ -12,6 +12,8 @@ import { suite as asyncInitializerSuite } from "./test_async_initializer"
 import { suite as homeScreenModelSuite } from "./test_home_screen_model"
 import { suite as downloadSnapshotSuite } from "./test_download_snapshot"
 import { suite as mediaPlayerCommandsSuite } from "./test_media_player_commands"
+import { suite as cloudUserDataSuite } from "./test_cloud_user_data"
+import { suite as cloudImportOutboxSuite } from "./test_cloud_import_outbox"
 
 export const ALL_SUITES: TestSuite[] = [
   settingMigrationSuite,
@@ -26,4 +28,6 @@ export const ALL_SUITES: TestSuite[] = [
   homeScreenModelSuite,
   downloadSnapshotSuite,
   mediaPlayerCommandsSuite,
+  cloudUserDataSuite,
+  cloudImportOutboxSuite,
 ]
